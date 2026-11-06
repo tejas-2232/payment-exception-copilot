@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-006",
+  "partner_id": "northstar",
+  "status": "open",
+  "exception_message": "Partner returned the payment for review",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-006",
+    "amount": 1006.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Elm",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-06"
+  },
+  "partner_response": "Reference received: NS-481. Reference not recognized.",
+  "notes": [
+    "The submitted instruction lists Northstar reference NS-418."
+  ]
+}

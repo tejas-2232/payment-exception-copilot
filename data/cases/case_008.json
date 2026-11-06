@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-008",
+  "partner_id": "northstar",
+  "status": "open",
+  "exception_message": "Partner returned an unfamiliar status",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-008",
+    "amount": 1008.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Birch",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-08"
+  },
+  "partner_response": "Status code XYZ requires clarification.",
+  "notes": [
+    "No explanation for this code was provided."
+  ]
+}

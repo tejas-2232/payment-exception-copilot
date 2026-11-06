@@ -18,6 +18,7 @@ class Case(BaseModel):
     exception_message: str
     payment: Payment
     notes: list[str]
+    partner_response: str | None = None
 
 
 class Evidence(BaseModel):
@@ -25,6 +26,11 @@ class Evidence(BaseModel):
     passage_id: str
     section: str
     version: str
+    excerpt: str
+
+
+class CaseEvidence(BaseModel):
+    source_id: str
     excerpt: str
 
 
@@ -45,3 +51,4 @@ class Recommendation(BaseModel):
     uncertainties: list[str]
     escalate_to_human: bool
     tool_activity: list[str] = Field(default_factory=list)
+    case_evidence: list[CaseEvidence] = Field(default_factory=list)

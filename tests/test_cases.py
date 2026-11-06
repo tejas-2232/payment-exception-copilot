@@ -8,8 +8,8 @@ client = TestClient(app)
 def test_case_list_and_detail():
     assert client.get("/health").json() == {"status": "ok"}
     cases = client.get("/cases").json()
-    assert len(cases) == 5
-    assert len({case["case_id"] for case in cases}) == 5
+    assert len(cases) == 8
+    assert len({case["case_id"] for case in cases}) == 8
     for case in cases:
         response = client.get(f"/cases/{case['case_id']}")
         assert response.status_code == 200

@@ -34,6 +34,9 @@ st.subheader(case["exception_message"])
 st.write("Status:", case["status"])
 st.subheader("Payment context")
 st.json(case["payment"])
+if case.get("partner_response"):
+    st.subheader("Partner response")
+    st.write(case["partner_response"])
 st.subheader("Notes")
 for note in case["notes"]:
     st.write(note)
@@ -62,6 +65,10 @@ if result and result["case_id"] == selected and st.session_state.get("investigat
         st.warning(uncertainty)
     if result.get("tool_activity"):
         st.write("Tools used:", " → ".join(result["tool_activity"]))
+    if result.get("case_evidence"):
+        st.subheader("Case evidence")
+        for source in result["case_evidence"]:
+            st.write(f"{source['source_id']}: {source['excerpt']}")
     st.subheader("Procedure evidence")
     if not result["evidence"]:
         st.write("No supporting procedure found.")

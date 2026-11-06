@@ -21,7 +21,7 @@ def fake(category="missing_bank_identifier", citations=None):
         AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
         AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
         AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "missing beneficiary bank identifier"}, "id": "3"}]),
-        AIMessage(content=json.dumps({"category": category, "passage_ids": citations})),
+        AIMessage(content=json.dumps({"category": category, "passage_ids": citations, "source_ids": ["payment.beneficiary_bank_identifier"]})),
     ])
 
 
@@ -55,3 +55,39 @@ def test_agent_api_without_model_configuration(monkeypatch):
     response = TestClient(app).post("/investigations", json={"case_id": "CASE-001", "mode": "agent"})
     assert response.status_code == 503
     assert "analyst" in response.json()["detail"]
+
+
+def test_agent_connects_partner_response_note_and_procedure():
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "Northstar reference mismatch"}, "id": "3"}]),
+        AIMessage(content=json.dumps({"category": "partner_reference_mismatch", "passage_ids": ["N-01-001"], "source_ids": ["partner_response", "note.1"]})),
+    ])
+    result = investigate_with_agent(load_cases()[5], model)
+    assert result.category == "partner_reference_mismatch"
+    assert [x.source_id for x in result.case_evidence] == ["partner_response", "note.1"]
+    assert "NS-481" in result.case_evidence[0].excerpt
+    assert "NS-418" in result.case_evidence[1].excerpt
+    assert result.evidence[0].document_id == "N-01"
+
+
+def test_agent_rejects_other_partners_procedure():
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "Harbor beneficiary mismatch"}, "id": "3"}]),
+        AIMessage(content=json.dumps({"category": "partner_beneficiary_mismatch", "passage_ids": ["H-01-001"], "source_ids": ["partner_response", "note.1"]})),
+    ])
+    with pytest.raises(ProviderError):
+        investigate_with_agent(load_cases()[5], model)
+
+
+def test_comparison_finds_baseline_misses():
+    from pathlib import Path
+    from evaluations.compare_investigators import run_one
+
+    items = json.loads(Path("evaluations/comparison_cases.json").read_text())
+    runs = [run_one(item, "offline") for item in items]
+    assert [run["passed"] for run in runs] == [False, False, True]
+    assert [run["category"] for run in runs] == ["insufficient_evidence"] * 3
