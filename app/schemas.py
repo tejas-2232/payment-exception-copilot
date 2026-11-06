@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -12,6 +14,7 @@ class Payment(BaseModel):
 class Case(BaseModel):
     case_id: str
     status: str
+    partner_id: str
     exception_message: str
     payment: Payment
     notes: list[str]
@@ -28,6 +31,7 @@ class Evidence(BaseModel):
 class InvestigationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: str = Field(min_length=1, max_length=100)
+    mode: Literal["offline", "agent"] = "offline"
 
 
 class Recommendation(BaseModel):
@@ -40,3 +44,4 @@ class Recommendation(BaseModel):
     missing_information: list[str]
     uncertainties: list[str]
     escalate_to_human: bool
+    tool_activity: list[str] = Field(default_factory=list)

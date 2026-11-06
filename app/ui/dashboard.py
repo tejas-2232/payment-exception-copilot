@@ -39,18 +39,20 @@ for note in case["notes"]:
     st.write(note)
 st.divider()
 st.subheader("Investigation")
+mode = st.selectbox("Investigation mode", ["offline", "agent"], help="The agent requires a configured model and sends fictional case data to the provider.")
 if st.button("Investigate", key=f"investigate-{selected}"):
     try:
-        response = httpx.post(f"{API_URL}/investigations", json={"case_id": selected}, timeout=30.0)
+        response = httpx.post(f"{API_URL}/investigations", json={"case_id": selected, "mode": mode}, timeout=30.0)
         response.raise_for_status()
         result = response.json()
         st.session_state["investigation"] = result
+        st.session_state["investigation_mode"] = mode
     except (httpx.HTTPError, ValueError):
         st.session_state.pop("investigation", None)
         st.error("Investigation is unavailable. Ask an analyst to review the case.")
 
 result = st.session_state.get("investigation")
-if result and result["case_id"] == selected:
+if result and result["case_id"] == selected and st.session_state.get("investigation_mode") == mode:
     st.write(result["case_summary"])
     st.write("Suggested next steps:")
     for step in result["recommended_next_steps"]:
@@ -58,6 +60,8 @@ if result and result["case_id"] == selected:
     st.write("Missing information:", ", ".join(result["missing_information"]) or "None identified")
     for uncertainty in result["uncertainties"]:
         st.warning(uncertainty)
+    if result.get("tool_activity"):
+        st.write("Tools used:", " → ".join(result["tool_activity"]))
     st.subheader("Procedure evidence")
     if not result["evidence"]:
         st.write("No supporting procedure found.")
