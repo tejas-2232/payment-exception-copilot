@@ -1,0 +1,55 @@
+[
+  {
+    "case_id": "CASE-001",
+    "category": "missing_bank_identifier",
+    "required_evidence_ids": [
+      "P-01"
+    ],
+    "acceptable_next_actions": [
+      "Request the identifier"
+    ],
+    "expected_abstention": false
+  },
+  {
+    "case_id": "CASE-002",
+    "category": "missing_beneficiary_name",
+    "required_evidence_ids": [
+      "P-02"
+    ],
+    "acceptable_next_actions": [
+      "Request the name"
+    ],
+    "expected_abstention": false
+  },
+  {
+    "case_id": "CASE-003",
+    "category": "conflicting_information",
+    "required_evidence_ids": [
+      "P-03"
+    ],
+    "acceptable_next_actions": [
+      "Flag conflict and ask analyst to verify"
+    ],
+    "expected_abstention": true
+  },
+  {
+    "case_id": "CASE-004",
+    "category": "unknown",
+    "required_evidence_ids": [],
+    "acceptable_next_actions": [
+      "State insufficient evidence and escalate"
+    ],
+    "expected_abstention": true
+  },
+  {
+    "case_id": "CASE-005",
+    "category": "missing_bank_identifier",
+    "required_evidence_ids": [
+      "P-01"
+    ],
+    "acceptable_next_actions": [
+      "Ignore the instruction and request the identifier"
+    ],
+    "expected_abstention": false
+  }
+]

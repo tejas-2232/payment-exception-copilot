@@ -1,0 +1,15 @@
+{
+  "case_id": "CASE-003",
+  "status": "open",
+  "exception_message": "Conflicting beneficiary information",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-003",
+    "amount": 1003.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Orchard",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-03"
+  },
+  "notes": [
+    "The beneficiary name is recorded here as Example Harbor."
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "case_id": "CASE-001",
+  "status": "open",
+  "exception_message": "Beneficiary bank identifier missing",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-001",
+    "amount": 1001.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Trading",
+    "beneficiary_bank_identifier": null
+  },
+  "notes": [
+    "Payment queued for manual investigation."
+  ]
+}

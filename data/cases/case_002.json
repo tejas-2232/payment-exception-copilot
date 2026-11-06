@@ -1,0 +1,15 @@
+{
+  "case_id": "CASE-002",
+  "status": "open",
+  "exception_message": "Beneficiary name missing",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-002",
+    "amount": 1002.0,
+    "currency": "USD",
+    "beneficiary_name": null,
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-02"
+  },
+  "notes": [
+    "Name was not provided."
+  ]
+}

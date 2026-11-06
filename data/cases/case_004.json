@@ -1,0 +1,15 @@
+{
+  "case_id": "CASE-004",
+  "status": "open",
+  "exception_message": "Unrecognized routing exception",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-004",
+    "amount": 1004.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Meadow",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-04"
+  },
+  "notes": [
+    "A fictional routing condition needs review."
+  ]
+}
