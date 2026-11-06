@@ -76,7 +76,7 @@ def test_agent_rejects_other_partners_procedure():
     model = ToolFake(responses=[
         AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
         AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
-        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "Harbor beneficiary mismatch"}, "id": "3"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "Northstar reference Harbor beneficiary mismatch"}, "id": "3"}]),
         AIMessage(content=json.dumps({"category": "partner_beneficiary_mismatch", "passage_ids": ["H-01-001"], "source_ids": ["partner_response", "note.1"]})),
     ])
     with pytest.raises(ProviderError):
@@ -91,3 +91,47 @@ def test_comparison_finds_baseline_misses():
     runs = [run_one(item, "offline") for item in items]
     assert [run["passed"] for run in runs] == [False, False, True]
     assert [run["category"] for run in runs] == ["insufficient_evidence"] * 3
+
+
+def test_cmp003_unsupported_mismatch_abstains_even_if_procedure_retrieved():
+    from pathlib import Path
+    from app.schemas import Case
+
+    case = Case.model_validate(json.loads(Path("evaluations/comparison_cases.json").read_text())[2]["case"])
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "Field beneficiary mismatch"}, "id": "3"}]),
+        AIMessage(content=json.dumps({"category": "partner_beneficiary_mismatch", "passage_ids": ["H-01-001"], "source_ids": ["partner_response", "note.1", "payment.beneficiary_name"]})),
+    ])
+    result = investigate_with_agent(case, model)
+    assert result.category == "insufficient_evidence"
+    assert result.evidence == []
+    assert result.escalate_to_human
+
+
+def test_generic_search_and_case_specific_retry_abstains():
+    from pathlib import Path
+    from app.schemas import Case
+
+    case = Case.model_validate(json.loads(Path("evaluations/comparison_cases.json").read_text())[2]["case"])
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "case procedure"}, "id": "3"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "status QZ"}, "id": "4"}]),
+        AIMessage(content=json.dumps({"category": "insufficient_evidence", "passage_ids": [], "source_ids": []})),
+    ])
+    result = investigate_with_agent(case, model)
+    assert result.category == "insufficient_evidence"
+    assert result.evidence == []
+    assert result.tool_activity.count("search_partner_procedures") == 2
+
+
+def test_harbor_positive_and_negated_mismatch_conditions():
+    from app.agent.langchain_agent import supports_category
+
+    case = load_cases()[6]
+    ids = ["partner_response", "note.1", "payment.beneficiary_name"]
+    assert supports_category("partner_beneficiary_mismatch", case, ids)
+    assert not supports_category("partner_beneficiary_mismatch", case.model_copy(update={"partner_response": "No beneficiary-name mismatch found."}), ids)
