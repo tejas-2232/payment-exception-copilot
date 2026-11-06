@@ -37,4 +37,31 @@ st.json(case["payment"])
 st.subheader("Notes")
 for note in case["notes"]:
     st.write(note)
-st.info("Investigations and recommendations are planned for a later milestone. An analyst remains responsible for decisions.")
+st.divider()
+st.subheader("Investigation")
+if st.button("Investigate", key=f"investigate-{selected}"):
+    try:
+        response = httpx.post(f"{API_URL}/investigations", json={"case_id": selected}, timeout=30.0)
+        response.raise_for_status()
+        result = response.json()
+        st.session_state["investigation"] = result
+    except (httpx.HTTPError, ValueError):
+        st.session_state.pop("investigation", None)
+        st.error("Investigation is unavailable. Ask an analyst to review the case.")
+
+result = st.session_state.get("investigation")
+if result and result["case_id"] == selected:
+    st.write(result["case_summary"])
+    st.write("Suggested next steps:")
+    for step in result["recommended_next_steps"]:
+        st.write("- " + step)
+    st.write("Missing information:", ", ".join(result["missing_information"]) or "None identified")
+    for uncertainty in result["uncertainties"]:
+        st.warning(uncertainty)
+    st.subheader("Procedure evidence")
+    if not result["evidence"]:
+        st.write("No supporting procedure found.")
+    for evidence in result["evidence"]:
+        st.markdown(f"**{evidence['document_id']} · {evidence['section']} · version {evidence['version']}**")
+        st.write(evidence["excerpt"])
+    st.info("Human review required. The analyst verifies the evidence and decides what to do.")

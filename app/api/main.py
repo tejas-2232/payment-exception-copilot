@@ -1,25 +1,12 @@
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from app.agent.orchestrator import ProviderError, investigate
+from app.schemas import Case, InvestigationRequest, Recommendation
 
 CASES_DIR = Path(__file__).resolve().parents[2] / "data" / "cases"
 app = FastAPI(title="Fictional Payment Exception Assistant")
 
 
-class Payment(BaseModel):
-    payment_id: str
-    amount: float
-    currency: str
-    beneficiary_name: str | None
-    beneficiary_bank_identifier: str | None
-
-
-class Case(BaseModel):
-    case_id: str
-    status: str
-    exception_message: str
-    payment: Payment
-    notes: list[str]
 
 
 def load_cases() -> list[Case]:
@@ -43,3 +30,12 @@ async def get_case(case_id: str) -> Case:
         if case.case_id == case_id:
             return case
     raise HTTPException(status_code=404, detail="Case not found")
+
+
+@app.post("/investigations", response_model=Recommendation)
+async def create_investigation(request: InvestigationRequest) -> Recommendation:
+    case = await get_case(request.case_id)
+    try:
+        return investigate(case)
+    except (ProviderError, OSError, ValueError):
+        raise HTTPException(status_code=503, detail="Investigation unavailable; please ask an analyst to review the case.")

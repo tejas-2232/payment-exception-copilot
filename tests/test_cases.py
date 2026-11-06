@@ -19,4 +19,4 @@ def test_case_list_and_detail():
 def test_unknown_case_and_read_only_api():
     assert client.get("/cases/UNKNOWN").status_code == 404
     assert client.post("/cases", json={}).status_code == 405
-    assert client.post("/investigations", json={"case_id": "CASE-001"}).status_code == 404
+    assert client.post("/investigations", json={"case_id": "UNKNOWN"}).status_code == 404
