@@ -135,3 +135,48 @@ def test_harbor_positive_and_negated_mismatch_conditions():
     ids = ["partner_response", "note.1", "payment.beneficiary_name"]
     assert supports_category("partner_beneficiary_mismatch", case, ids)
     assert not supports_category("partner_beneficiary_mismatch", case.model_copy(update={"partner_response": "No beneficiary-name mismatch found."}), ids)
+
+
+def test_excessive_search_stops_and_abstains():
+    from pathlib import Path
+    from app.schemas import Case
+
+    case = Case.model_validate(json.loads(Path("evaluations/comparison_cases.json").read_text())[2]["case"])
+    calls = [
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "case procedure"}, "id": "3"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "status QZ"}, "id": "4"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "status QZ"}, "id": "5"}]),
+    ]
+    result = investigate_with_agent(case, ToolFake(responses=calls))
+    assert result.category == "insufficient_evidence"
+    assert result.tool_activity.count("search_partner_procedures") == 2
+    assert "search limit" in result.uncertainties[0].lower()
+    assert result.escalate_to_human
+
+
+def harbor_fake(source_ids):
+    return ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "beneficiary name mismatch"}, "id": "3"}]),
+        AIMessage(content=json.dumps({"category": "partner_beneficiary_mismatch", "passage_ids": ["H-01-001"], "source_ids": source_ids})),
+    ])
+
+
+def test_valid_redundant_document_id_is_not_treated_as_case_source():
+    from pathlib import Path
+    from app.schemas import Case
+
+    case = Case.model_validate(json.loads(Path("evaluations/comparison_cases.json").read_text())[1]["case"])
+    result = investigate_with_agent(case, harbor_fake(["partner_response", "note.1", "H-01", "payment.beneficiary_name"]))
+    assert result.category == "partner_beneficiary_mismatch"
+    assert {source.source_id for source in result.case_evidence} == {"partner_response", "note.1", "payment.beneficiary_name"}
+    assert result.evidence[0].document_id == "H-01"
+
+
+def test_unknown_or_uncited_source_is_still_rejected():
+    case = load_cases()[6]
+    with pytest.raises(ProviderError):
+        investigate_with_agent(case, harbor_fake(["partner_response", "note.1", "P-01", "payment.beneficiary_name"]))
