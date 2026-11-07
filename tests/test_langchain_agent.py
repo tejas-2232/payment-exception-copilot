@@ -88,7 +88,7 @@ def test_comparison_finds_baseline_misses():
     from evaluations.compare_investigators import run_one
 
     items = json.loads(Path("evaluations/comparison_cases.json").read_text())
-    runs = [run_one(item, "offline") for item in items]
+    runs = [run_one(item, "offline") for item in items[:3]]
     assert [run["passed"] for run in runs] == [False, False, True]
     assert [run["category"] for run in runs] == ["insufficient_evidence"] * 3
 
@@ -180,3 +180,45 @@ def test_unknown_or_uncited_source_is_still_rejected():
     case = load_cases()[6]
     with pytest.raises(ProviderError):
         investigate_with_agent(case, harbor_fake(["partner_response", "note.1", "P-01", "payment.beneficiary_name"]))
+
+
+def test_first_search_uses_reported_issue_and_shows_abstention_context():
+    from pathlib import Path
+    from app.schemas import Case
+
+    case = Case.model_validate(json.loads(Path("evaluations/comparison_cases.json").read_text())[2]["case"])
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "beneficiary name mismatch"}, "id": "3"}]),
+        AIMessage(content=json.dumps({"category": "insufficient_evidence", "passage_ids": [], "source_ids": []})),
+    ])
+    result = investigate_with_agent(case, model)
+    assert result.category == "insufficient_evidence"
+    assert result.search_attempts[0].query == "Status QZ has no explanation."
+    assert result.search_attempts[0].status == "no_results"
+    assert {source.source_id: source.excerpt for source in result.case_evidence}["partner_response"] == case.partner_response
+    assert not result.evidence
+
+
+def test_reference_matching_and_alternative_wording_are_conservative():
+    from pathlib import Path
+    from app.agent.langchain_agent import supports_category
+    from app.schemas import Case
+
+    items = json.loads(Path("evaluations/comparison_cases.json").read_text())
+    matching = Case.model_validate(items[3]["case"])
+    assert not supports_category("partner_reference_mismatch", matching, ["partner_response", "note.1"])
+    alternative = Case.model_validate(items[5]["case"])
+    assert not supports_category("partner_beneficiary_mismatch", alternative, ["partner_response", "note.1", "payment.beneficiary_name"])
+
+
+def test_harbor_mismatch_requires_different_name_in_note():
+    from app.agent.langchain_agent import supports_category
+
+    case = load_cases()[6]
+    ids = ["partner_response", "note.1", "payment.beneficiary_name"]
+    matching = case.model_copy(update={"notes": ["Beneficiary document shows Example Fern."]})
+    missing = case.model_copy(update={"notes": ["No details were supplied."]})
+    assert not supports_category("partner_beneficiary_mismatch", matching, ids)
+    assert not supports_category("partner_beneficiary_mismatch", missing, ids)

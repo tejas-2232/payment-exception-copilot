@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+from statistics import median
 from time import perf_counter
 
 from app.agent.langchain_agent import investigate_with_agent
@@ -24,6 +25,7 @@ def run_one(item, mode):
                   "human_review": result.escalate_to_human}
         return {"case_id": case.case_id, "mode": mode, "category": result.category,
                 "checks": checks, "passed": all(checks.values()),
+                "expected_category": item["category"],
                 "elapsed_ms": round((perf_counter() - started) * 1000, 1)}
     except Exception:
         return {"case_id": case.case_id, "mode": mode, "error": "investigation failed",
@@ -41,7 +43,18 @@ def main():
         print(json.dumps(output))
     for mode in modes:
         runs = [r for r in outputs if r["mode"] == mode]
-        print(f"{mode}: {sum(r['passed'] for r in runs)}/{len(runs)} passed; {sum('error' in r for r in runs)} errors")
+        completed = [r for r in runs if "error" not in r]
+        abstention_cases = [r for r in completed if r["expected_category"] == "insufficient_evidence"]
+        metrics = {"mode": mode, "total": len(runs), "completed": len(completed),
+                   "errors": len(runs) - len(completed), "all_checks_passed": sum(r["passed"] for r in completed),
+                   "false_recommendations": sum(r["category"] != "insufficient_evidence" for r in abstention_cases),
+                   "correct_abstentions": sum(r["category"] == "insufficient_evidence" for r in abstention_cases),
+                   "completed_abstention_expected": len(abstention_cases),
+                   "false_abstentions": sum(r["category"] == "insufficient_evidence" and r["expected_category"] != "insufficient_evidence" for r in completed),
+                   "citation_id_checks_passed": sum(r["checks"]["procedure"] and r["checks"]["case_sources"] for r in completed),
+                   "median_elapsed_ms": round(median(r["elapsed_ms"] for r in completed), 1) if completed else None,
+                   "cost": "unavailable; inspect provider usage"}
+        print(json.dumps(metrics))
     return 1 if any("error" in r for r in outputs) else 0
 
 

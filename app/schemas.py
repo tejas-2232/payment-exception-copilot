@@ -34,6 +34,11 @@ class CaseEvidence(BaseModel):
     excerpt: str
 
 
+class SearchAttempt(BaseModel):
+    query: str
+    status: str
+
+
 class InvestigationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: str = Field(min_length=1, max_length=100)
@@ -52,3 +57,4 @@ class Recommendation(BaseModel):
     escalate_to_human: bool
     tool_activity: list[str] = Field(default_factory=list)
     case_evidence: list[CaseEvidence] = Field(default_factory=list)
+    search_attempts: list[SearchAttempt] = Field(default_factory=list)

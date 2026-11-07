@@ -69,6 +69,10 @@ if result and result["case_id"] == selected and st.session_state.get("investigat
         st.subheader("Case evidence")
         for source in result["case_evidence"]:
             st.write(f"{source['source_id']}: {source['excerpt']}")
+    if result.get("search_attempts"):
+        with st.expander("Procedure searches"):
+            for attempt in result["search_attempts"]:
+                st.write(f"{attempt['query']} — {attempt['status']}")
     st.subheader("Procedure evidence")
     if not result["evidence"]:
         st.write("No supporting procedure found.")

@@ -12,7 +12,7 @@ from langchain_openai import ChatOpenAI
 
 from app.agent.orchestrator import ProviderError
 from app.retrieval.search import search_procedures, words
-from app.schemas import Case, CaseEvidence, Recommendation
+from app.schemas import Case, CaseEvidence, Recommendation, SearchAttempt
 
 PARTNERS_DIR = Path(__file__).resolve().parents[2] / "data" / "partners"
 PARTNER_FILES = {"northstar": "northstar.json", "harbor": "harbor.json"}
@@ -49,9 +49,14 @@ def supports_category(category: str, case: Case, cited_sources: list[str]) -> bo
         return not case.payment.beneficiary_name and "payment.beneficiary_name" in cited_sources
     if category == "partner_beneficiary_mismatch":
         # Require an explicit positive report, not a vague status or a negated mismatch.
+        # This fictional fixture format marks a different name with a company suffix.
+        # Unknown formats abstain; this is not general name matching.
+        name = case.payment.beneficiary_name or ""
+        note_has_different_name = bool(name and re.search(
+            rf"\b{re.escape(name)}\s+(?:ltd|limited|group|inc)\b", notes, re.I))
         return bool(re.search(r"\bbeneficiary[ -]name mismatch\b", response) and
                     not re.search(r"\b(no|not|without)\b.{0,30}\bmismatch\b", response) and
-                    notes.strip() and case.payment.beneficiary_name)
+                    note_has_different_name)
     if category == "partner_reference_mismatch":
         response_refs = set(re.findall(r"\bNS-\d+\b", response, re.I))
         note_refs = set(re.findall(r"\bNS-\d+\b", notes, re.I))
@@ -62,15 +67,17 @@ def supports_category(category: str, case: Case, cited_sources: list[str]) -> bo
     return category == "insufficient_evidence"
 
 
-def insufficient_result(case: Case, calls: list[str], reason: str) -> Recommendation:
+def insufficient_result(case: Case, calls: list[str], reason: str, searches: list[SearchAttempt]) -> Recommendation:
     missing = [name for name in ("beneficiary_name", "beneficiary_bank_identifier")
                if not getattr(case.payment, name)]
     return Recommendation(case_id=case.case_id, category="insufficient_evidence",
         case_summary="The available evidence does not support a specific recommendation.",
         recommended_next_steps=["Ask the analyst to investigate and review the case."],
-        evidence=[], case_evidence=[], missing_information=missing,
+        evidence=[], case_evidence=[CaseEvidence(source_id=source_id, excerpt=excerpt)
+            for source_id, excerpt in case_sources(case).items()
+            if source_id in {"case.exception", "partner_response"}], missing_information=missing,
         uncertainties=[reason, "An analyst must review the case and procedures."],
-        escalate_to_human=True, tool_activity=calls)
+        escalate_to_human=True, tool_activity=calls, search_attempts=searches)
 
 
 def investigate_with_agent(case: Case, model=None) -> Recommendation:
@@ -80,7 +87,8 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
     if partner.get("partner_id") != case.partner_id:
         raise ProviderError("Invalid partner profile")
     sources = case_sources(case)
-    calls, retrieved = [], []
+    calls, retrieved, searches = [], [], []
+    issue_text = (case.partner_response or case.exception_message).strip()[:200]
 
     def record(name: str) -> None:
         if len(calls) >= 8:
@@ -105,14 +113,22 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
         record("search_partner_procedures")
         if not query.strip() or len(query) > 200:
             raise ValueError("Query must contain 1 to 200 characters")
-        generic = {"case", "procedure", "partner", "payment", "review", "status", "information", "details", "example", "fictional"}
-        terms = words(query) - generic
-        case_terms = words(" ".join(sources.values())) - generic
-        if not terms or not (terms & case_terms):
-            return {"status": "weak_query", "results": [], "guidance": "Retry once with specific terms from the case or partner response."}
-        found = [e for e in search_procedures(query) if e.document_id in partner["procedure_ids"]][:5]
+        # Anchor the first search to the reported issue, not a partner profile.
+        actual_query = issue_text if not searches else query.strip()
+        generic = {"case", "procedure", "partner", "payment", "review", "status", "information", "details", "example", "fictional", "has", "was", "were", "no", "not", "explanation", "requires", "reported"}
+        terms = words(actual_query) - generic
+        issue_terms = words(issue_text) - generic
+        if not terms or not (terms & issue_terms):
+            searches.append(SearchAttempt(query=actual_query, status="weak_query"))
+            return {"status": "weak_query", "query_used": actual_query, "results": [],
+                    "guidance": "Retry once with specific terms from the reported issue."}
+        found = [e for e in search_procedures(actual_query)
+                 if e.document_id in partner["procedure_ids"]
+                 and issue_terms.intersection(words(e.section + " " + e.excerpt))][:5]
         retrieved.extend(found)
-        return {"status": "ok" if found else "no_results", "results": [e.model_dump() for e in found],
+        status = "ok" if found else "no_results"
+        searches.append(SearchAttempt(query=actual_query, status=status))
+        return {"status": status, "query_used": actual_query, "results": [e.model_dump() for e in found],
                 "guidance": "Search results are candidates, not proof; compare procedure conditions to case facts."}
 
     if model is None:
@@ -130,7 +146,8 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
         "for either cite partner_response and at least one note source as well as its procedure; for Harbor also cite payment.beneficiary_name. "
         "Other categories: missing_bank_identifier (P-01), missing_beneficiary_name (P-02), "
         "conflicting_information (P-03), insufficient_evidence (no passage). "
-        "Search using specific words from the partner response and case, not generic terms like case procedure. "
+        "First identify the observed issue from the partner response, or the exception if no response exists. "
+        "The first search uses that issue automatically. A profile is not evidence of a case condition. "
         "If search reports a weak query or no results, retry once with different case-specific terms. "
         "A search result is only a candidate: compare the exact procedure conditions against cited case facts. "
         "Do not infer a mismatch from an unexplained status. Cite case sources for all non-abstaining results. "
@@ -141,7 +158,7 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
         if any(isinstance(message, ToolMessage) and message.name == "search_partner_procedures"
                and message.status == "error" and message.content == "Tool call limit exceeded. Do not call 'search_partner_procedures' again."
                for message in result["messages"]):
-            return insufficient_result(case, calls, "Procedure search limit reached; analyst review is needed.")
+            return insufficient_result(case, calls, "Procedure search limit reached; analyst review is needed.", searches)
         answer = json.loads(result["messages"][-1].content)
         if not isinstance(answer, dict) or set(answer) != {"category", "passage_ids", "source_ids"}:
             raise ValueError("Invalid output")
@@ -154,7 +171,7 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
         if not {"get_case", "get_partner_profile", "search_partner_procedures"}.issubset(calls):
             raise ValueError("Required tools not called")
         if not retrieved:
-            return insufficient_result(case, calls, "No procedure evidence was retrieved for this case.")
+            return insufficient_result(case, calls, "No procedure evidence was retrieved for this case.", searches)
         by_id = {e.passage_id: e for e in retrieved}
         if not set(answer["passage_ids"]).issubset(by_id):
             raise ValueError("Invalid procedure citation")
@@ -177,7 +194,7 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
         if category == "partner_beneficiary_mismatch" and "payment.beneficiary_name" not in answer["source_ids"]:
             raise ValueError("Missing payment evidence")
         if not supports_category(category, case, answer["source_ids"]):
-            return insufficient_result(case, calls, "The cited case facts did not establish the selected procedure conditions.")
+            return insufficient_result(case, calls, "The cited case facts did not establish the selected procedure conditions.", searches)
         missing = []
         if not case.payment.beneficiary_name:
             missing.append("beneficiary_name")
@@ -187,6 +204,6 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
             recommended_next_steps=[action], evidence=cited, missing_information=missing,
             case_evidence=[CaseEvidence(source_id=x, excerpt=sources[x]) for x in dict.fromkeys(answer["source_ids"])],
             uncertainties=["Analyst must verify all sources and that the cited procedure supports the issue; citation checks do not prove correctness."],
-            escalate_to_human=True, tool_activity=calls)
+            escalate_to_human=True, tool_activity=calls, search_attempts=searches)
     except Exception as exc:
         raise ProviderError("Agent investigation unavailable or unverified") from exc
