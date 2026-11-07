@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 from app.agent.orchestrator import ProviderError
+from app.agent.safety import requires_context_review
 from app.retrieval.search import search_procedures, words
 from app.schemas import Case, CaseEvidence, Recommendation, SearchAttempt
 
@@ -43,6 +44,8 @@ def supports_category(category: str, case: Case, cited_sources: list[str]) -> bo
     notes = " ".join(case.notes[int(source[5:]) - 1] for source in cited_sources
                      if source.startswith("note.") and source[5:].isdigit()
                      and 0 < int(source[5:]) <= len(case.notes))
+    if category != "insufficient_evidence" and requires_context_review(case):
+        return False
     if category == "missing_bank_identifier":
         return not case.payment.beneficiary_bank_identifier and "payment.beneficiary_bank_identifier" in cited_sources
     if category == "missing_beneficiary_name":
@@ -54,7 +57,7 @@ def supports_category(category: str, case: Case, cited_sources: list[str]) -> bo
         name = case.payment.beneficiary_name or ""
         note_has_different_name = bool(name and re.search(
             rf"\b{re.escape(name)}\s+(?:ltd|limited|group|inc)\b", notes, re.I))
-        return bool(re.search(r"\bbeneficiary[ -]name mismatch\b", response) and
+        return bool(re.search(r"\bbeneficiary[ -]name (?:mismatch|does not match|differs from)\b", response) and
                     not re.search(r"\b(no|not|without)\b.{0,30}\bmismatch\b", response) and
                     note_has_different_name)
     if category == "partner_reference_mismatch":

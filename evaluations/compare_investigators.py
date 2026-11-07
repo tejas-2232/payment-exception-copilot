@@ -32,28 +32,38 @@ def run_one(item, mode):
                 "passed": False, "elapsed_ms": round((perf_counter() - started) * 1000, 1)}
 
 
+def summarize(runs, mode):
+    completed = [r for r in runs if "error" not in r]
+    abstention_cases = [r for r in completed if r["expected_category"] == "insufficient_evidence"]
+    metrics = {"mode": mode, "total": len(runs), "completed": len(completed),
+               "errors": len(runs) - len(completed), "all_checks_passed": sum(r["passed"] for r in completed),
+               "false_recommendations_when_abstention_expected": sum(r["category"] != "insufficient_evidence" for r in abstention_cases),
+               "wrong_non_abstaining_recommendations": sum(r["category"] != "insufficient_evidence" and r["category"] != r["expected_category"] for r in completed),
+               "wrong_non_abstaining_when_specific_expected": sum(r["category"] != "insufficient_evidence" and r["expected_category"] != "insufficient_evidence" and r["category"] != r["expected_category"] for r in completed),
+               "correct_abstentions": sum(r["category"] == "insufficient_evidence" for r in abstention_cases),
+               "completed_abstention_expected": len(abstention_cases),
+               "false_abstentions": sum(r["category"] == "insufficient_evidence" and r["expected_category"] != "insufficient_evidence" for r in completed),
+               "citation_id_checks_passed": sum(r["checks"]["procedure"] and r["checks"]["case_sources"] for r in completed),
+               "median_elapsed_ms": round(median(r["elapsed_ms"] for r in completed), 1) if completed else None,
+               "semantic_support_and_actions": "manual review required; not automatically scored",
+               "cost": "unavailable; inspect provider usage"}
+    return metrics
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["offline", "agent", "both"], default="offline")
+    parser.add_argument("--dataset", choices=["development", "candidate"], default="development")
     args = parser.parse_args()
-    items = json.loads((Path(__file__).parent / "comparison_cases.json").read_text())
+    filename = "comparison_cases.json" if args.dataset == "development" else "candidate_cases.json"
+    items = json.loads((Path(__file__).parent / filename).read_text())
     modes = ["offline", "agent"] if args.mode == "both" else [args.mode]
     outputs = [run_one(item, mode) for item in items for mode in modes]
     for output in outputs:
         print(json.dumps(output))
     for mode in modes:
         runs = [r for r in outputs if r["mode"] == mode]
-        completed = [r for r in runs if "error" not in r]
-        abstention_cases = [r for r in completed if r["expected_category"] == "insufficient_evidence"]
-        metrics = {"mode": mode, "total": len(runs), "completed": len(completed),
-                   "errors": len(runs) - len(completed), "all_checks_passed": sum(r["passed"] for r in completed),
-                   "false_recommendations": sum(r["category"] != "insufficient_evidence" for r in abstention_cases),
-                   "correct_abstentions": sum(r["category"] == "insufficient_evidence" for r in abstention_cases),
-                   "completed_abstention_expected": len(abstention_cases),
-                   "false_abstentions": sum(r["category"] == "insufficient_evidence" and r["expected_category"] != "insufficient_evidence" for r in completed),
-                   "citation_id_checks_passed": sum(r["checks"]["procedure"] and r["checks"]["case_sources"] for r in completed),
-                   "median_elapsed_ms": round(median(r["elapsed_ms"] for r in completed), 1) if completed else None,
-                   "cost": "unavailable; inspect provider usage"}
+        metrics = summarize(runs, mode)
         print(json.dumps(metrics))
     return 1 if any("error" in r for r in outputs) else 0
 

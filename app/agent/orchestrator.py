@@ -5,6 +5,7 @@ from typing import Protocol
 
 import httpx
 
+from app.agent.safety import requires_context_review
 from app.retrieval.search import search_procedures
 from app.schemas import Case, Evidence, Recommendation
 
@@ -67,7 +68,11 @@ def investigate(case: Case, provider: Provider | None = None) -> Recommendation:
     # Notes are data, not instructions. Conflict indications need human review;
     # a simple keyword check is deliberately conservative, not semantic detection.
     description = case.exception_message.lower()
-    if "conflict" in description:
+    if requires_context_review(case):
+        category, doc, query = "insufficient_evidence", None, ""
+        summary = "The case needs additional context before a specific next step can be suggested."
+        action = "Ask an analyst to investigate and review the case."
+    elif "conflict" in description:
         category, doc, query = "conflicting_information", "P-03", "conflicting case information"
         summary = "The case reports conflicting information."
         action = "Flag the conflict and ask the analyst to verify the information."

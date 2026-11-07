@@ -201,7 +201,7 @@ def test_first_search_uses_reported_issue_and_shows_abstention_context():
     assert not result.evidence
 
 
-def test_reference_matching_and_alternative_wording_are_conservative():
+def test_reference_matching_and_alternative_wording():
     from pathlib import Path
     from app.agent.langchain_agent import supports_category
     from app.schemas import Case
@@ -210,7 +210,7 @@ def test_reference_matching_and_alternative_wording_are_conservative():
     matching = Case.model_validate(items[3]["case"])
     assert not supports_category("partner_reference_mismatch", matching, ["partner_response", "note.1"])
     alternative = Case.model_validate(items[5]["case"])
-    assert not supports_category("partner_beneficiary_mismatch", alternative, ["partner_response", "note.1", "payment.beneficiary_name"])
+    assert supports_category("partner_beneficiary_mismatch", alternative, ["partner_response", "note.1", "payment.beneficiary_name"])
 
 
 def test_harbor_mismatch_requires_different_name_in_note():
