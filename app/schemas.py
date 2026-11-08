@@ -45,6 +45,17 @@ class InvestigationRequest(BaseModel):
     mode: Literal["offline", "agent"] = "offline"
 
 
+class InvestigationMetrics(BaseModel):
+    total_duration_ms: float | None = None
+    first_model_output_ms: float | None = None
+    model_calls: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    estimated_cost_usd: float | None = None
+    pricing_status: str = "Not available"
+
+
 class Recommendation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: str
@@ -58,3 +69,4 @@ class Recommendation(BaseModel):
     tool_activity: list[str] = Field(default_factory=list)
     case_evidence: list[CaseEvidence] = Field(default_factory=list)
     search_attempts: list[SearchAttempt] = Field(default_factory=list)
+    metrics: InvestigationMetrics | None = None

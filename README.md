@@ -40,14 +40,31 @@ The CMP-003 regression tests cover a vague search, one case-specific retry, and 
 
 The first procedure search uses the reported partner response (or exception message when there is no response), rather than the model's proposed query. One case-specific retry is allowed; the dashboard shows the query actually used and the result status. Abstentions show the reported case facts, but a search match does not prove a procedure applies. The example Harbor guard recognizes only a few fictional response patterns and a narrow name suffix format; alternative valid wording can lead to an abstention.
 
-The comparison summary reports completed runs and errors separately, false recommendations and correct abstentions among completed cases expecting abstention, false abstentions, citation-ID matches, and median latency. Citation-ID matches do not measure semantic support. The app does not calculate cost; inspect provider usage. The cases were created during development and are not an independent evaluation.
+The comparison summary reports completed runs and errors separately, false recommendations and correct abstentions among completed cases expecting abstention, false abstentions, citation-ID matches, and median latency. Citation-ID matches do not measure semantic support. The evaluation runner does not calculate cost; inspect provider usage. The cases were created during development and are not an independent evaluation.
 
 ## Expanded fictional evaluation
 
 The development comparison now contains 32 scenarios; a separate 10-case candidate set is available with `python -m evaluations.compare_investigators --dataset candidate --mode offline` (or `--mode both` for a live agent comparison). Both datasets and labels were authored in the same development process and require independent human review; neither is evidence of real-world performance. Expected actions are written for reviewer use and are not automatically scored or sent to the model.
 
-The comparison reports incorrect non-abstaining categories both overall and separately when a specific recommendation was expected, as well as abstentions, errors, latency and citation-ID checks. Citation-ID matches do not prove semantic support. Review the cited source and recommended action manually; cost is available from your provider or tracing service, not calculated by this runner. LangSmith and model runs are opt-in, may incur cost, and may send fictional case content to those services.
+The comparison reports incorrect non-abstaining categories both overall and separately when a specific recommendation was expected, as well as abstentions, errors, latency and citation-ID checks. Citation-ID matches do not prove semantic support. Review the cited source and recommended action manually; the evaluation runner does not calculate cost; check your provider or tracing service. LangSmith and model runs are opt-in, may incur cost, and may send fictional case content to those services.
 
 Cases marked closed, with both beneficiary fields missing, or containing words indicating resolved, corrected or historical context are conservatively sent for human review. This is a keyword-based precaution that can also cause unnecessary abstention; it is not reliable resolution or temporal reasoning.
 
 GitHub Actions is configured to run linting and the offline test suite on pushes and pull requests. It does not run live model evaluations or need model keys.
+
+## Investigation timing and estimated cost
+
+The dashboard's **Run metrics** tab shows total backend investigation time and first model output. First model output is measured from the start of the first model call that emits a generated text or tool-call fragment to that first fragment. It is not time to first visible answer: the dashboard waits for the full investigation. Offline mode has no model first token. A provider or model that does not stream the necessary event will show this timing as unavailable.
+
+The API aggregates provider-reported input, output and cached-input tokens across model calls in one investigation. To enable a per-investigation USD estimate, set these non-secret environment variables in the API process using the current prices for your selected model, **in USD per million tokens**:
+
+```dotenv
+MODEL_PRICING_MODEL=the-exact-OPENAI_MODEL-value
+MODEL_INPUT_PRICE_PER_MILLION_USD=your-input-rate
+MODEL_OUTPUT_PRICE_PER_MILLION_USD=your-output-rate
+MODEL_CACHED_INPUT_PRICE_PER_MILLION_USD=your-cached-input-rate
+```
+
+Look up and maintain the rates at [OpenAI pricing](https://openai.com/api/pricing/). Do not enter the placeholder text as a price. The cached-input rate is required when the provider reports cached input. The estimate uses uncached input × input rate + cached input × cached rate + output × output rate, divided by one million. It assumes any cache usage the provider does not report is uncached; other fees, discounts, taxes and failed calls are not included. If usage or matching valid prices are unavailable, the app shows unavailable rather than guessing. The optional legacy offline OpenAI provider does not report usage to the dashboard.
+
+The sidebar adds up known estimates for investigations in the current browser session; if any attempted run has unavailable cost, it displays the total as unavailable. The session total resets when the session ends and is not an account-wide total or invoice. Check provider billing for actual charges, especially after errors.

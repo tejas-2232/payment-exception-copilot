@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
+from time import perf_counter
 from fastapi import FastAPI, HTTPException
 from starlette.concurrency import run_in_threadpool
 from app.agent.orchestrator import ProviderError, investigate
 from app.agent.langchain_agent import investigate_with_agent
-from app.schemas import Case, InvestigationRequest, Recommendation
+from app.schemas import Case, InvestigationMetrics, InvestigationRequest, Recommendation
 
 CASES_DIR = Path(__file__).resolve().parents[2] / "data" / "cases"
 app = FastAPI(title="Fictional Payment Exception Assistant")
@@ -38,6 +40,15 @@ async def get_case(case_id: str) -> Case:
 async def create_investigation(request: InvestigationRequest) -> Recommendation:
     case = await get_case(request.case_id)
     try:
-        return await run_in_threadpool(investigate_with_agent if request.mode == "agent" else investigate, case)
+        started = perf_counter()
+        result = await run_in_threadpool(investigate_with_agent if request.mode == "agent" else investigate, case)
+        if request.mode == "offline":
+            deterministic = os.getenv("INVESTIGATION_PROVIDER", "deterministic") == "deterministic"
+            result.metrics = InvestigationMetrics(total_duration_ms=round((perf_counter() - started) * 1000, 1),
+                model_calls=0 if deterministic else None, input_tokens=0 if deterministic else None,
+                output_tokens=0 if deterministic else None, cached_input_tokens=0 if deterministic else None,
+                estimated_cost_usd=0.0 if deterministic else None,
+                pricing_status="No model calls" if deterministic else "Usage unavailable")
+        return result
     except (ProviderError, OSError, ValueError):
         raise HTTPException(status_code=503, detail="Investigation unavailable; please ask an analyst to review the case.")

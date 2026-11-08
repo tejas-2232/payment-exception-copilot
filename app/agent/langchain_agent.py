@@ -3,6 +3,7 @@ import json
 import os
 import re
 from pathlib import Path
+from time import perf_counter
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
@@ -10,6 +11,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
+from app.agent.metrics import ModelMetricsCallback
 from app.agent.orchestrator import ProviderError
 from app.agent.safety import requires_context_review
 from app.retrieval.search import search_procedures, words
@@ -84,6 +86,14 @@ def insufficient_result(case: Case, calls: list[str], reason: str, searches: lis
 
 
 def investigate_with_agent(case: Case, model=None) -> Recommendation:
+    started = perf_counter()
+    metrics = ModelMetricsCallback()
+    result = _investigate_with_agent(case, model, metrics)
+    result.metrics = metrics.result((perf_counter() - started) * 1000)
+    return result
+
+
+def _investigate_with_agent(case: Case, model, metrics: ModelMetricsCallback) -> Recommendation:
     if case.partner_id not in PARTNER_FILES:
         raise ProviderError("Unknown partner")
     partner = json.loads((PARTNERS_DIR / PARTNER_FILES[case.partner_id]).read_text())
@@ -138,7 +148,7 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
         if not os.getenv("OPENAI_API_KEY") or not os.getenv("OPENAI_MODEL"):
             raise ProviderError("Agent model is not configured")
         model = ChatOpenAI(model=os.environ["OPENAI_MODEL"], temperature=0,
-                           timeout=20, max_retries=0, max_tokens=700)
+                           timeout=20, max_retries=0, max_tokens=700, streaming=True, stream_usage=True)
     agent = create_agent(model=model, tools=[get_case, get_partner_profile, search_partner_procedures],
         middleware=[ToolCallLimitMiddleware(tool_name="search_partner_procedures", run_limit=2, exit_behavior="end")],
         system_prompt=("Investigate the selected fictional case. Call all three tools and compare case sources "
@@ -157,7 +167,7 @@ def investigate_with_agent(case: Case, model=None) -> Recommendation:
         "If conditions are not supported or you are uncertain, choose insufficient_evidence."))
     try:
         result = agent.invoke({"messages": [{"role": "user", "content": "Investigate the selected case."}]},
-                              config={"recursion_limit": 20})
+                              config={"recursion_limit": 20, "callbacks": [metrics]})
         if any(isinstance(message, ToolMessage) and message.name == "search_partner_procedures"
                and message.status == "error" and message.content == "Tool call limit exceeded. Do not call 'search_partner_procedures' again."
                for message in result["messages"]):
