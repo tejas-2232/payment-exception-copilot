@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-012",
+  "partner_id": "harbor",
+  "status": "open",
+  "exception_message": "Fictional payment pending analyst review",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-012",
+    "amount": 1012.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Review 12",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-12"
+  },
+  "partner_response": null,
+  "notes": [
+    "Fictional review case; no real payment or customer data."
+  ]
+}

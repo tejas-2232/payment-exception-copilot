@@ -6,7 +6,7 @@ from statistics import median
 from time import perf_counter
 
 from app.agent.langchain_agent import investigate_with_agent
-from app.agent.orchestrator import DeterministicProvider, investigate
+from app.agent.orchestrator import DeterministicProvider, ProviderError, investigate
 from app.schemas import Case
 
 
@@ -27,8 +27,9 @@ def run_one(item, mode):
                 "checks": checks, "passed": all(checks.values()),
                 "expected_category": item["category"],
                 "elapsed_ms": round((perf_counter() - started) * 1000, 1)}
-    except Exception:
-        return {"case_id": case.case_id, "mode": mode, "error": "investigation failed",
+    except Exception as exc:
+        code = exc.code if isinstance(exc, ProviderError) else "investigation_failed"
+        return {"case_id": case.case_id, "mode": mode, "error": "investigation failed", "error_code": code,
                 "passed": False, "elapsed_ms": round((perf_counter() - started) * 1000, 1)}
 
 

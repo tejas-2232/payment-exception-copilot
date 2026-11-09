@@ -98,3 +98,43 @@ def test_streaming_chat_model_reports_first_output_and_usage(monkeypatch):
     assert metrics.model_calls == 1
     assert (metrics.input_tokens, metrics.output_tokens, metrics.cached_input_tokens) == (100, 10, 20)
     assert abs(metrics.estimated_cost_usd - 0.00026) < 1e-10
+
+
+def test_full_agent_workflow_with_streaming_tool_calls():
+    import json
+    import httpx
+    from langchain_openai import ChatOpenAI
+    from app.agent.langchain_agent import investigate_with_agent
+    from app.api.main import load_cases
+
+    actions = iter([
+        ("get_case", {}),
+        ("get_partner_profile", {}),
+        ("search_partner_procedures", {"query": "missing beneficiary bank identifier"}),
+        None,
+    ])
+    def reply(request):
+        action = next(actions)
+        if action:
+            name, args = action
+            delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": f"call_{name}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]}
+            finish = "tool_calls"
+        else:
+            delta = {"role": "assistant", "content": json.dumps({"category": "missing_bank_identifier", "passage_ids": ["P-01-001"], "source_ids": ["payment.beneficiary_bank_identifier"]})}
+            finish = "stop"
+        chunks = [
+            {"id": "test", "object": "chat.completion.chunk", "created": 1, "model": "test-model", "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+            {"id": "test", "object": "chat.completion.chunk", "created": 1, "model": "test-model", "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]},
+            {"id": "test", "object": "chat.completion.chunk", "created": 1, "model": "test-model", "choices": [], "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}},
+        ]
+        content = "".join("data: " + json.dumps(chunk) + "\n\n" for chunk in chunks) + "data: [DONE]\n\n"
+        return httpx.Response(200, content=content, headers={"content-type": "text/event-stream"})
+
+    client = httpx.Client(transport=httpx.MockTransport(reply))
+    model = ChatOpenAI(model="test-model", api_key="not-a-real-key", http_client=client,
+                       streaming=True, stream_usage=True, max_retries=0)
+    result = investigate_with_agent(load_cases()[0], model)
+    assert result.category == "missing_bank_identifier"
+    assert result.metrics.model_calls == 4
+    assert result.metrics.input_tokens == 400 and result.metrics.output_tokens == 40
+    assert result.metrics.first_model_output_ms is not None

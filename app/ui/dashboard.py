@@ -57,6 +57,16 @@ if not cases:
 
 with st.sidebar:
     st.caption(f"{len(cases)} cases available")
+    with st.expander("Review priority queue"):
+        st.caption("Fictional offline scores; unscored cases appear first for review. Scores do not establish fraud or safety.")
+        try:
+            queue_response = httpx.get(f"{API_URL}/fraud-review-queue", timeout=5.0)
+            queue_response.raise_for_status()
+            for row in queue_response.json():
+                score = f"{row['score']}/100" if row["score"] is not None else "Unscored"
+                st.write(f"{row['case_id']} · {score}")
+        except (httpx.HTTPError, ValueError):
+            st.caption("Priority queue unavailable; review cases individually.")
     selected = st.selectbox("Select a case", [case["case_id"] for case in cases])
     st.divider()
     st.caption("INVESTIGATION MODE")
@@ -111,10 +121,23 @@ if run:
         st.session_state["investigation_mode"] = mode
         st.session_state.setdefault("investigation_costs", []).append((result.get("metrics") or {}).get("estimated_cost_usd"))
         st.rerun()
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, ValueError) as exc:
         st.session_state.setdefault("investigation_costs", []).append(None)
         st.session_state.pop("investigation", None)
-        st.error("Investigation unavailable. Please ask an analyst to review the case.")
+        # Only show the API's controlled error codes, never arbitrary provider output.
+        code = exc.response.headers.get("X-Investigation-Error") if isinstance(exc, httpx.HTTPStatusError) else None
+        messages = {
+            "model_not_configured": "The AI model is not configured. Check OPENAI_API_KEY and OPENAI_MODEL.",
+            "model_authentication_failed": "The model provider rejected authentication or access. Check your API key and model access.",
+            "model_rate_or_credit_limit": "The model provider reported a rate or credit limit. Check API billing and limits.",
+            "model_not_found": "The selected model was not found. Check OPENAI_MODEL and account access.",
+            "model_request_rejected": "The model provider rejected the request. Check the selected model and configuration.",
+            "model_service_unavailable": "The model provider is unavailable. Please retry later.",
+            "model_connection_failed": "The model provider could not be reached or timed out. Check your connection.",
+            "agent_response_invalid": "The agent response could not be verified against the case and evidence.",
+        }
+        message = messages.get(code, "Investigation unavailable. Please ask an analyst to review the case.")
+        st.error(message)
 
 result = st.session_state.get("investigation")
 if not result or result["case_id"] != selected or st.session_state.get("investigation_mode") != mode:
@@ -195,3 +218,57 @@ with right:
                 st.write(f"**Model calls:** {metrics.get('model_calls') if metrics.get('model_calls') is not None else 'Unavailable'}  ·  **Input tokens:** {metrics.get('input_tokens') if metrics.get('input_tokens') is not None else 'Unavailable'}  ·  **Output tokens:** {metrics.get('output_tokens') if metrics.get('output_tokens') is not None else 'Unavailable'}")
                 st.caption(f"Cached input tokens reported: {metrics.get('cached_input_tokens') if metrics.get('cached_input_tokens') is not None else 'Unavailable'}")
                 st.caption(metrics.get("pricing_status", "Usage unavailable") + ". Cost is an estimate, not a provider bill.")
+
+st.divider()
+with st.container(border=True):
+    fraud_header, fraud_action = st.columns([3, 1], vertical_alignment="bottom")
+    with fraud_header:
+        st.markdown('<div class="eyebrow">03 / Fictional fraud review</div>', unsafe_allow_html=True)
+        st.subheader("Review priority signals")
+        st.caption("A fictional review aid, not a fraud finding or probability. An analyst decides what to do.")
+    with fraud_action:
+        run_fraud = st.button("Assess review signals", use_container_width=True)
+    if run_fraud:
+        try:
+            with st.spinner("Reviewing fictional history and changes…"):
+                response = httpx.post(f"{API_URL}/fraud-reviews", json={"case_id": selected, "mode": mode}, timeout=120.0)
+                response.raise_for_status()
+                fraud_result = response.json()
+            st.session_state["fraud_review"] = fraud_result
+            st.session_state["fraud_review_mode"] = mode
+            st.session_state.setdefault("investigation_costs", []).append((fraud_result.get("metrics") or {}).get("estimated_cost_usd"))
+            st.rerun()
+        except (httpx.HTTPError, ValueError):
+            st.session_state.setdefault("investigation_costs", []).append(None)
+            st.session_state.pop("fraud_review", None)
+            st.error("Review unavailable. Ask an analyst to review the case; no priority score was assigned.")
+    review = st.session_state.get("fraud_review")
+    if review and review["case_id"] == selected and st.session_state.get("fraud_review_mode") == mode:
+        if review["status"] == "insufficient_data":
+            st.warning("Insufficient data — no priority score assigned")
+            for item in review["missing_information"]:
+                st.write("- " + item)
+        else:
+            score_col, context_col = st.columns([1, 3])
+            with score_col:
+                st.metric("Review priority", f"{review['score']} / {review['score_max']}")
+            with context_col:
+                st.write("**Signals identified**" if review["signals"] else "**No configured signals identified**")
+                st.caption("A zero score does not establish that a payment is safe. This score is not a fraud probability.")
+            for signal in review["signals"]:
+                st.write(f"**{signal['title']} · +{signal['points']} points**")
+                st.write(signal["explanation"])
+                for source_id in signal["evidence_ids"]:
+                    st.caption(f"{source_id}: {review['evidence'][source_id]}")
+        st.write("**Suggested review:**", review["next_step"])
+        if review["evidence"].get("context.analyst_note"):
+            st.write("**Context to verify:**", review["evidence"]["context.analyst_note"])
+        with st.expander("Fictional review inputs"):
+            for source_id, excerpt in review["evidence"].items():
+                st.write(f"**{source_id}:** {excerpt}")
+        with st.expander("Fictional procedure, rubric and activity"):
+            st.write("**F-01 · Fictional fraud-review guidance**")
+            st.write(review["procedure_excerpt"])
+            st.write("Scoring: newly added beneficiary within 30 days +25; instruction change within 24 hours +35; amount above three times the supplied historical average +40. Weights are invented for this prototype.")
+            st.write("**Tools used:**", " → ".join(review.get("tool_activity", [])) or "No agent tools used")
+        st.info("Human review required. The application does not label fraud or take payment actions.")

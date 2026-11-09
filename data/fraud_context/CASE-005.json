@@ -1,0 +1,23 @@
+{
+  "case_id": "CASE-005",
+  "as_of": "2026-11-08T12:00:00Z",
+  "beneficiary_added_at": "2026-01-01T12:00:00Z",
+  "change_history_complete": true,
+  "instructions_changed_at": null,
+  "payment_history_complete": true,
+  "prior_payments": [
+    {
+      "amount": 1000,
+      "currency": "USD"
+    },
+    {
+      "amount": 1000,
+      "currency": "USD"
+    },
+    {
+      "amount": 1000,
+      "currency": "USD"
+    }
+  ],
+  "analyst_context": null
+}

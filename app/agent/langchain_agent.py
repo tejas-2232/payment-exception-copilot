@@ -146,7 +146,7 @@ def _investigate_with_agent(case: Case, model, metrics: ModelMetricsCallback) ->
 
     if model is None:
         if not os.getenv("OPENAI_API_KEY") or not os.getenv("OPENAI_MODEL"):
-            raise ProviderError("Agent model is not configured")
+            raise ProviderError("Agent model is not configured", code="model_not_configured")
         model = ChatOpenAI(model=os.environ["OPENAI_MODEL"], temperature=0,
                            timeout=20, max_retries=0, max_tokens=700, streaming=True, stream_usage=True)
     agent = create_agent(model=model, tools=[get_case, get_partner_profile, search_partner_procedures],
@@ -219,4 +219,23 @@ def _investigate_with_agent(case: Case, model, metrics: ModelMetricsCallback) ->
             uncertainties=["Analyst must verify all sources and that the cited procedure supports the issue; citation checks do not prove correctness."],
             escalate_to_human=True, tool_activity=calls, search_attempts=searches)
     except Exception as exc:
-        raise ProviderError("Agent investigation unavailable or unverified") from exc
+        if isinstance(exc, ProviderError):
+            raise
+        status = getattr(exc, "status_code", None)
+        if status in (401, 403):
+            code = "model_authentication_failed"
+        elif status == 429:
+            code = "model_rate_or_credit_limit"
+        elif status == 404:
+            code = "model_not_found"
+        elif status == 400:
+            code = "model_request_rejected"
+        elif isinstance(status, int) and status >= 500:
+            code = "model_service_unavailable"
+        elif isinstance(exc, (TimeoutError,)) or type(exc).__name__ in {"APITimeoutError", "APIConnectionError"}:
+            code = "model_connection_failed"
+        elif isinstance(exc, (ValueError, TypeError, KeyError, IndexError)):
+            code = "agent_response_invalid"
+        else:
+            code = "investigation_failed"
+        raise ProviderError("Agent investigation unavailable or unverified", code=code) from exc

@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-011",
+  "partner_id": "northstar",
+  "status": "open",
+  "exception_message": "Fictional payment pending analyst review",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-011",
+    "amount": 1011.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Review 11",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-11"
+  },
+  "partner_response": null,
+  "notes": [
+    "Fictional review case; no real payment or customer data."
+  ]
+}

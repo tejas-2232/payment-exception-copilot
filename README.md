@@ -1,6 +1,6 @@
 # Payment exception investigation assistant
 
-A personal, fictional, read-only prototype. The app lets an analyst inspect eight sample cases and request a bounded, procedure-grounded recommendation for human review. It does not represent a real bank or its policies.
+A personal, fictional, read-only prototype. The app lets an analyst inspect fourteen sample cases and request a bounded, procedure-grounded recommendation for human review. It does not represent a real bank or its policies.
 
 ## Run locally
 Requires Python 3.10 or newer. From the repository root:
@@ -68,3 +68,17 @@ MODEL_CACHED_INPUT_PRICE_PER_MILLION_USD=your-cached-input-rate
 Look up and maintain the rates at [OpenAI pricing](https://openai.com/api/pricing/). Do not enter the placeholder text as a price. The cached-input rate is required when the provider reports cached input. The estimate uses uncached input × input rate + cached input × cached rate + output × output rate, divided by one million. It assumes any cache usage the provider does not report is uncached; other fees, discounts, taxes and failed calls are not included. If usage or matching valid prices are unavailable, the app shows unavailable rather than guessing. The optional legacy offline OpenAI provider does not report usage to the dashboard.
 
 The sidebar adds up known estimates for investigations in the current browser session; if any attempted run has unavailable cost, it displays the total as unavailable. The session total resets when the session ends and is not an account-wide total or invoice. Check provider billing for actual charges, especially after errors.
+
+If an investigation returns 503, the dashboard displays a safe diagnostic when available, and the API logs an `Investigation failed:` code without printing case text or provider error details. The comparison runner also includes an `error_code` for failed runs. A model rate or credit limit can have several causes; check your provider account and sanitized LangSmith trace. Unverified agent output is treated as an error and requires analyst review, not a successful abstention.
+
+## Fictional fraud-review priority
+
+The dashboard has a separate **Review priority signals** section and an optional queue. The queue uses offline rules and shows unscored cases first so missing information remains visible; an analyst determines the actual review order. Select a case and choose **Assess review signals** in offline or agent mode. The response is read-only and is never a fraud finding, a probability, proof of safety, or a payment decision. No personal, demographic, account or behavioral data from real people is used.
+
+The score is an invented 0–100 point total: beneficiary added within 30 days (+25), instructions changed within 24 hours (+35), and amount greater than three times the average of at least three supplied same-currency historical payments (+40). It uses the fictional review timestamp in the case context. These thresholds and weights are not calibrated and have no demonstrated real-world predictive validity. A zero means only that no configured signal was identified; a documented explanation is displayed for the analyst and does not automatically erase a signal.
+
+No score is assigned if the review context is absent, history is incomplete or too short, currencies differ, required timestamps are missing, timezone-naive or in the future, the case is closed, or the amount is invalid. Human review is always required. The historical fixture asserts that entries are prior payments and that history is complete; the prototype does not independently verify those assertions.
+
+In agent mode, LangChain can call two scoped read-only tools to inspect the selected fictional context and guidance. The agent identifies signal IDs but cannot set the score; the server returns a result only if the agent output agrees with its fixed rule checks. Disagreement or model failure returns an error for analyst review. Model inputs, including fictional notes, may be sent to the model and to LangSmith if tracing is enabled. No live agent test is included in CI.
+
+Run `python -m evaluations.run_fraud_review --mode offline` to check 14 labeled development fixtures, or `python -m evaluations.run_fraud_review --mode both` for a live comparison using your configured model and credits. The labels and thresholds were created during development; the 12 fixtures are not independently reviewed, held out, or evidence of fraud-detection accuracy. Offline/simulated-agent tests run with `pytest`. Evidence support, potential disparate impacts, and real-world validity have not been assessed.

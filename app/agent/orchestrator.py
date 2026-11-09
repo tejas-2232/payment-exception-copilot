@@ -11,7 +11,9 @@ from app.schemas import Case, Evidence, Recommendation
 
 
 class ProviderError(Exception):
-    pass
+    def __init__(self, message: str, *, code: str = "investigation_failed"):
+        super().__init__(message)
+        self.code = code
 
 
 class Provider(Protocol):
@@ -29,7 +31,7 @@ class OpenAIProvider:
         key = os.getenv("OPENAI_API_KEY")
         model = os.getenv("OPENAI_MODEL")
         if not key or not model:
-            raise ProviderError("Model provider is not configured")
+            raise ProviderError("Model provider is not configured", code="model_not_configured")
         try:
             response = httpx.post(
                 "https://api.openai.com/v1/chat/completions",

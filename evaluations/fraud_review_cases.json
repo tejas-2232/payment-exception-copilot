@@ -1,0 +1,114 @@
+[
+  {
+    "case_id": "CASE-001",
+    "scenario": "new beneficiary",
+    "status": "signals_identified",
+    "score": 25,
+    "signals": [
+      "new_beneficiary"
+    ]
+  },
+  {
+    "case_id": "CASE-002",
+    "scenario": "recent instruction change",
+    "status": "signals_identified",
+    "score": 35,
+    "signals": [
+      "recent_change"
+    ]
+  },
+  {
+    "case_id": "CASE-003",
+    "scenario": "amount above fictional history",
+    "status": "signals_identified",
+    "score": 40,
+    "signals": [
+      "unusual_amount"
+    ]
+  },
+  {
+    "case_id": "CASE-004",
+    "scenario": "three combined signals",
+    "status": "signals_identified",
+    "score": 100,
+    "signals": [
+      "new_beneficiary",
+      "recent_change",
+      "unusual_amount"
+    ]
+  },
+  {
+    "case_id": "CASE-005",
+    "scenario": "no configured signal",
+    "status": "no_signals_identified",
+    "score": 0,
+    "signals": []
+  },
+  {
+    "case_id": "CASE-006",
+    "scenario": "insufficient history",
+    "status": "insufficient_data",
+    "score": null,
+    "signals": []
+  },
+  {
+    "case_id": "CASE-007",
+    "scenario": "future beneficiary timestamp",
+    "status": "insufficient_data",
+    "score": null,
+    "signals": []
+  },
+  {
+    "case_id": "CASE-008",
+    "scenario": "incomplete change history",
+    "status": "insufficient_data",
+    "score": null,
+    "signals": []
+  },
+  {
+    "case_id": "CASE-009",
+    "scenario": "new beneficiary with contextual explanation",
+    "status": "signals_identified",
+    "score": 25,
+    "signals": [
+      "new_beneficiary"
+    ]
+  },
+  {
+    "case_id": "CASE-010",
+    "scenario": "non-comparable history currency",
+    "status": "insufficient_data",
+    "score": null,
+    "signals": []
+  },
+  {
+    "case_id": "CASE-011",
+    "scenario": "no configured signal and complete data",
+    "status": "no_signals_identified",
+    "score": 0,
+    "signals": []
+  },
+  {
+    "case_id": "CASE-012",
+    "scenario": "unusual amount with explanation to verify",
+    "status": "signals_identified",
+    "score": 40,
+    "signals": [
+      "unusual_amount"
+    ]
+  },
+  {
+    "case_id": "CASE-013",
+    "scenario": "injected instruction with complete history",
+    "status": "no_signals_identified",
+    "score": 0,
+    "signals": []
+  },
+  {
+    "case_id": "CASE-014",
+    "scenario": "injected instruction with incomplete history",
+    "status": "insufficient_data",
+    "score": null,
+    "signals": []
+  }
+]

@@ -13,3 +13,7 @@ Assumptions: case details and procedures are available; the analyst can interpre
 Only fictional data is used. The MVP is read-only: it does not send messages, change cases, release payments, make compliance decisions or connect to banking systems. Analysts should be able to select a case, request an investigation, inspect exact evidence, and see missing information, uncertainty and escalation. The owner should be able to evaluate recommendations and record cost, latency and failures. The present slice supports case selection and inspection only; investigation and evaluation are future work.
 
 MVP acceptance requires at least five cases, structured recommendations grounded in case facts and valid citations, explicit insufficient-evidence responses, no external writes, and repeatable offline tests for boundaries, citations and no-action behavior.
+
+## Later extension: fictional fraud-review signals
+
+The prototype now also explores a separate, read-only review-priority signal for fictional cases. The analyst can inspect an invented points rubric and supporting case context; the score is not a fraud probability, fraud finding, or automated decision. Unavailable or inconsistent inputs produce no score. The original non-goal of making fraud or compliance decisions remains in effect. The weights and data are invented, have not been calibrated or independently evaluated, and must not be used for real payments. No interviews or observed operational outcomes are implied.
