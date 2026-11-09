@@ -1,5 +1,4 @@
 """Bounded LangChain inspection of fictional fraud-review inputs."""
-import json
 import os
 from time import perf_counter
 
@@ -10,6 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from app.agent.fraud_review import FraudContext, FraudReview, PROCEDURE, review_fraud
 from app.agent.metrics import ModelMetricsCallback
+from app.agent.model_output import parse_model_json
 from app.agent.orchestrator import ProviderError
 from app.schemas import Case
 
@@ -53,7 +53,7 @@ def fraud_review_with_agent(case: Case, context: FraudContext | None, model=None
     try:
         output = agent.invoke({"messages": [{"role": "user", "content": "Review the selected fictional case."}]},
                               config={"recursion_limit": 16, "callbacks": [metrics]})
-        answer = json.loads(output["messages"][-1].content)
+        answer = parse_model_json(output["messages"][-1])
         if not isinstance(answer, dict) or set(answer) != {"status", "signal_ids"}:
             raise ValueError("Invalid agent output")
         ids = answer["signal_ids"]

@@ -12,6 +12,7 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 from app.agent.metrics import ModelMetricsCallback
+from app.agent.model_output import parse_model_json
 from app.agent.orchestrator import ProviderError
 from app.agent.safety import requires_context_review
 from app.retrieval.search import search_procedures, words
@@ -172,7 +173,7 @@ def _investigate_with_agent(case: Case, model, metrics: ModelMetricsCallback) ->
                and message.status == "error" and message.content == "Tool call limit exceeded. Do not call 'search_partner_procedures' again."
                for message in result["messages"]):
             return insufficient_result(case, calls, "Procedure search limit reached; analyst review is needed.", searches)
-        answer = json.loads(result["messages"][-1].content)
+        answer = parse_model_json(result["messages"][-1])
         if not isinstance(answer, dict) or set(answer) != {"category", "passage_ids", "source_ids"}:
             raise ValueError("Invalid output")
         category = answer["category"]

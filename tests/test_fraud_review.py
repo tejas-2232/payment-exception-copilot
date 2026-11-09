@@ -151,3 +151,15 @@ def test_api_agent_failure_does_not_return_a_score(monkeypatch):
     response = TestClient(app).post("/fraud-reviews", json={"case_id": "CASE-001", "mode": "agent"})
     assert response.status_code == 503
     assert "score" not in response.json()
+
+
+def test_fraud_agent_accepts_text_block_answer_and_validates_signals():
+    case = load_cases()[0]
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_fraud_review_context", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_fraud_review_guidance", "args": {}, "id": "2"}]),
+        AIMessage(content=[{"type": "text", "text": json.dumps({"status": "signals_identified", "signal_ids": ["new_beneficiary"]})}]),
+    ])
+    result = fraud_review_with_agent(case, load_context(case.case_id), model)
+    assert result.score == 25
+    assert result.human_review_required

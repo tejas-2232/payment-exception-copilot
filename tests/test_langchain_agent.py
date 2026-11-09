@@ -222,3 +222,17 @@ def test_harbor_mismatch_requires_different_name_in_note():
     missing = case.model_copy(update={"notes": ["No details were supplied."]})
     assert not supports_category("partner_beneficiary_mismatch", matching, ids)
     assert not supports_category("partner_beneficiary_mismatch", missing, ids)
+
+
+def test_case_003_accepts_text_block_response_without_bypassing_validation():
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "conflicting beneficiary information"}, "id": "3"}]),
+        AIMessage(content=[{"type": "text", "text": json.dumps({"category": "conflicting_information", "passage_ids": ["P-03-001"], "source_ids": ["case.exception"]})}]),
+    ])
+    result = investigate_with_agent(load_cases()[2], model)
+    assert result.case_id == "CASE-003"
+    assert result.category == "conflicting_information"
+    assert result.evidence[0].document_id == "P-03"
+    assert result.escalate_to_human
