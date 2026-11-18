@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-017",
+  "partner_id": "keystone",
+  "status": "open",
+  "exception_message": "Partner returned the payment for remittance review",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-017",
+    "amount": 640.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Alder",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-17"
+  },
+  "partner_response": "Remittance reference KS-7741 was not recognized.",
+  "notes": [
+    "The submitted remittance reference is KS-7714."
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "partner_id": "lumen",
+  "name": "Lumen Clearing (fictional)",
+  "description": "Fictional Lumen account mismatches are reviewed under L-01. Shared repair procedures P-01, P-02, and P-03 still apply.",
+  "procedure_ids": [
+    "P-01",
+    "P-02",
+    "P-03",
+    "L-01"
+  ]
+}

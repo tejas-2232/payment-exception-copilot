@@ -1,0 +1,64 @@
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app.agent.fraud_review import review_fraud, score_band
+from app.agent.orchestrator import investigate
+from app.api.main import load_cases
+from app.retrieval.search import search_procedures
+
+client = TestClient(__import__("app.api.main", fromlist=["app"]).app)
+
+
+def test_shared_procedures_explain_when_they_apply():
+    for name, marker in (
+        ("P-01.md", "leaves the beneficiary bank identifier blank"),
+        ("P-02.md", "has no beneficiary name"),
+        ("P-03.md", "Show both values to the analyst"),
+    ):
+        text = Path("data/procedures", name).read_text(encoding="utf-8")
+        assert "Version: 1" in text
+        assert marker in text
+    bank = search_procedures("missing beneficiary bank identifier")
+    assert bank[0].document_id == "P-01"
+    assert bank[0].passage_id == "P-01-001"
+
+
+def test_new_partners_use_their_own_procedures_offline():
+    cases = {case.case_id: case for case in load_cases()}
+    lumen = investigate(cases["CASE-015"])
+    assert lumen.category == "partner_account_mismatch"
+    assert {item.document_id for item in lumen.evidence} == {"L-01"}
+    assert lumen.escalate_to_human
+    matched = investigate(cases["CASE-016"])
+    assert matched.category == "insufficient_evidence"
+    assert matched.evidence == []
+    keystone = investigate(cases["CASE-017"])
+    assert keystone.category == "partner_remittance_mismatch"
+    assert {item.document_id for item in keystone.evidence} == {"K-01"}
+    shared = investigate(cases["CASE-018"])
+    assert shared.category == "missing_bank_identifier"
+    assert {item.document_id for item in shared.evidence} == {"P-01"}
+    listed = {case["partner_id"] for case in client.get("/cases").json()}
+    assert {"northstar", "harbor", "lumen", "keystone"} <= listed
+
+
+def test_review_rubric_shows_fired_and_silent_checks():
+    cases = {case.case_id: case for case in load_cases()}
+    from app.agent.fraud_review import load_context
+    review = review_fraud(cases["CASE-001"], load_context("CASE-001"))
+    assert review.score == 25
+    assert review.score_band == "watch"
+    assert score_band(0) == "routine"
+    assert score_band(40) == "elevated"
+    assert score_band(100) == "priority"
+    fired = {item.signal_id: item.fired for item in review.rubric}
+    assert fired == {"new_beneficiary": True, "recent_change": False, "unusual_amount": False}
+    quiet = review_fraud(cases["CASE-016"], load_context("CASE-016"))
+    assert quiet.score == 0
+    assert quiet.score_band == "routine"
+    assert quiet.status == "no_signals_identified"
+    assert all(not item.fired for item in quiet.rubric)
+    api = client.post("/fraud-reviews", json={"case_id": "CASE-015", "mode": "offline"}).json()
+    assert api["score_band"] == "watch"
+    assert len(api["rubric"]) == 3

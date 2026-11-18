@@ -106,7 +106,7 @@ def test_priority_queue_keeps_unscored_cases_visible_before_scores():
     response = TestClient(app).get("/fraud-review-queue")
     assert response.status_code == 200
     rows = response.json()
-    assert len(rows) == 14
+    assert len(rows) == len(load_cases())
     first_scored = next(index for index, row in enumerate(rows) if row["score"] is not None)
     assert all(row["score"] is None for row in rows[:first_scored])
     scores = [row["score"] for row in rows[first_scored:]]

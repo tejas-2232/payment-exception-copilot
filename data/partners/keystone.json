@@ -1,0 +1,11 @@
+{
+  "partner_id": "keystone",
+  "name": "Keystone Remit (fictional)",
+  "description": "Fictional Keystone remittance mismatches are reviewed under K-01. Shared repair procedures P-01, P-02, and P-03 still apply.",
+  "procedure_ids": [
+    "P-01",
+    "P-02",
+    "P-03",
+    "K-01"
+  ]
+}
