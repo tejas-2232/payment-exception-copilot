@@ -1,6 +1,6 @@
 # Payment exception investigation assistant
 
-A personal, fictional, read-only prototype. The app lets an analyst inspect fourteen sample cases and request a bounded, procedure-grounded recommendation for human review. It does not represent a real bank or its policies.
+Exception Desk is a simulated payment-operations workspace. An analyst reviews a payment exception, checks the evidence, and can file a case note only after approving the exact wording. The sample work is the kind an operations desk handles: a missing bank identifier, a missing beneficiary name, or conflicting payment details. It uses fictional cases and procedures. It does not connect to Bank of America, BNY Mellon, or any other bank, and it does not repair, release, return, or block a payment.
 
 ## Run locally
 Requires Python 3.10 or newer. From the repository root:
@@ -16,7 +16,11 @@ In a second terminal, activate the same environment and run `streamlit run app/u
 
 ## Investigations and limitations
 
-Select a case and choose **Investigate**. The default provider is deterministic and runs offline. The API retrieves passages from the fictional procedures, validates citations, and returns a bounded recommendation or an insufficient-evidence response. Every result requires analyst review; the app takes no payment or case actions. Case notes are untrusted data. This prototype uses simple rules and keyword search: it cannot reliably detect all conflicts or prompt injections, and matching citations does not prove the advice is correct. These development cases are not a held-out evaluation.
+Select a case and choose **Investigate**. The default provider is deterministic and runs offline. The API retrieves passages from the fictional procedures, validates citations, and returns a bounded recommendation or an insufficient-evidence response. Every result requires analyst review. The app takes no payment action. Fixture case notes stay as authored; an approved note is a separate local record. Case notes are untrusted data. This prototype uses simple rules and keyword search: it cannot reliably detect all conflicts or prompt injections, and matching citations does not prove the advice is correct. These development cases are not a held-out evaluation.
+
+## Case notes
+
+Choose **Prepare draft**. The API builds a note from the read-only investigation and shows the case ID, the exact wording, and the evidence it used. The analyst can edit that wording, discard it, or choose **Approve and file**. Only the approved wording is written to local SQLite and shown in case history. Saving a draft, discarding it, or filing it does not change the case JSON. A repeated approval of the same wording returns the filed note instead of writing a second one. An out-of-date revision is rejected. The investigation agent has no tool that writes a note. Set `CASE_NOTES_DB` to choose the SQLite file; the default is `data/runtime/case_notes.sqlite`, which is not part of the fixture data. SQLite comes with Python, so no extra package is required.
 
 An optional OpenAI provider can be selected with `INVESTIGATION_PROVIDER=openai`, `OPENAI_MODEL`, and `OPENAI_API_KEY` in the API process environment. It sends the fictional case and a single permitted option to the provider and asks it to select that option; it does not generate free-form advice. This is a connectivity demonstration, not a comparison of model quality, and may incur charges. Use only fictional data, review provider terms, and never commit credentials. Provider failures return a review message. The default requires no key.
 

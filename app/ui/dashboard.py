@@ -1,10 +1,45 @@
-"""Analyst workspace for fictional, read-only payment investigations."""
+"""Payment-operations desk for reviewing exceptions and filing an approved case note."""
 import os
 
 import httpx
 import streamlit as st
 
 API_URL = os.environ.get("CASE_API_URL", "http://127.0.0.1:8000").rstrip("/")
+
+
+def _show_note_error(exc: httpx.HTTPError) -> None:
+    detail = None
+    if isinstance(exc, httpx.HTTPStatusError):
+        try:
+            detail = exc.response.json().get("detail")
+        except ValueError:
+            detail = None
+    if isinstance(detail, list):
+        detail = "Enter the note wording before filing. Nothing was saved."
+    st.error(detail or "The note was not filed. The case file is unchanged.")
+
+
+def _submit_note(method: str, url: str, body: str | None, revision: int, outcome: str) -> None:
+    payload = {"expected_revision": revision}
+    if body is not None:
+        payload["body"] = body
+    try:
+        response = httpx.request(method, url, json=payload, timeout=30.0)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        _show_note_error(exc)
+        return
+    result = response.json()
+    if outcome == "note_draft":
+        st.session_state["note_draft"] = result
+        st.session_state["note_notice"] = "Draft saved. It is not on the case history yet."
+    elif outcome == "note_filed":
+        st.session_state.pop("note_draft", None)
+        st.session_state["note_notice"] = "Note filed. The payment was not changed."
+    else:
+        st.session_state.pop("note_draft", None)
+        st.session_state["note_notice"] = "Draft discarded. Nothing was filed."
+    st.rerun()
 st.set_page_config(page_title="Exception Desk", page_icon="◈", layout="wide", initial_sidebar_state="auto")
 st.markdown("""
 <style>
@@ -35,11 +70,11 @@ h3 {font-size: 1rem !important; font-weight: 700 !important;}
 """, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.markdown('<div class="brandmark">◈ &nbsp;Exception Desk</div><div class="brandsub">Operations workspace</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brandmark">◈ &nbsp;Exception Desk</div><div class="brandsub">Payment operations</div>', unsafe_allow_html=True)
     st.divider()
     st.caption("WORKSPACE")
-    st.markdown("**◉  Investigations**")
-    st.caption("Fictional data · Read-only")
+    st.markdown("**◉  Exception queue**")
+    st.caption("Simulated cases · Analyst approval")
     st.divider()
     st.caption("CASE QUEUE")
 
@@ -68,6 +103,10 @@ with st.sidebar:
         except (httpx.HTTPError, ValueError):
             st.caption("Priority queue unavailable; review cases individually.")
     selected = st.selectbox("Select a case", [case["case_id"] for case in cases])
+    if st.session_state.get("note_case") != selected:
+        st.session_state["note_case"] = selected
+        st.session_state.pop("note_draft", None)
+        st.session_state.pop("note_notice", None)
     st.divider()
     st.caption("INVESTIGATION MODE")
     mode = st.radio("Choose workflow", ["offline", "agent"],
@@ -94,11 +133,11 @@ except (httpx.HTTPError, ValueError):
     st.stop()
 
 payment = case["payment"]
-st.markdown('<div class="eyebrow">Operations / Investigations</div>', unsafe_allow_html=True)
+st.markdown('<div class="eyebrow">Payment operations / Exceptions</div>', unsafe_allow_html=True)
 header, action = st.columns([3, 1], vertical_alignment="bottom")
 with header:
-    st.title("Case investigation")
-    st.markdown('<p class="hero-note">Review the payment, examine the evidence, and decide what happens next.</p>', unsafe_allow_html=True)
+    st.title("Exception desk")
+    st.markdown('<p class="hero-note">Review the exception, check the evidence, and file a note only after you approve the wording. This desk does not move the payment.</p>', unsafe_allow_html=True)
 with action:
     run = st.button("Investigate case", type="primary", use_container_width=True)
 
@@ -157,11 +196,25 @@ with left:
         st.divider()
         st.markdown('<div class="section-label">Partner response</div>', unsafe_allow_html=True)
         st.write(case.get("partner_response") or "No partner response provided.")
-        st.markdown('<div class="section-label">Case notes</div>', unsafe_allow_html=True)
-        for note in case["notes"]:
-            st.write(note)
-        if not case["notes"]:
-            st.write("No notes available.")
+        st.markdown('<div class="section-label">Case history</div>', unsafe_allow_html=True)
+        try:
+            history_response = httpx.get(f"{API_URL}/cases/{selected}/note-history", timeout=5.0)
+            history_response.raise_for_status()
+            history = history_response.json()
+        except (httpx.HTTPError, ValueError):
+            history = {"file_notes": case["notes"], "approved_notes": []}
+            st.caption("Filed notes are unavailable. The case file is unchanged.")
+        if history["file_notes"]:
+            st.caption("On the case file")
+            for note in history["file_notes"]:
+                st.write(note)
+        else:
+            st.write("No notes were on the case file.")
+        if history["approved_notes"]:
+            st.caption("Filed by an analyst")
+            for note in history["approved_notes"]:
+                st.write(note["approved_at"])
+                st.write(note["body"])
 
 with right:
     with st.container(border=True):
@@ -221,9 +274,51 @@ with right:
 
 st.divider()
 with st.container(border=True):
+    st.markdown('<div class="eyebrow">03 / Case note</div>', unsafe_allow_html=True)
+    note_header, note_action = st.columns([3, 1], vertical_alignment="bottom")
+    with note_header:
+        st.subheader("File a case note")
+        st.caption("The desk prepares a draft. Edit it if needed. Only the wording you approve is filed, and filing does not repair, release, return, or block the payment.")
+    with note_action:
+        prepare_note = st.button("Prepare draft", use_container_width=True)
+    if prepare_note:
+        try:
+            draft_response = httpx.post(f"{API_URL}/cases/{selected}/note-drafts", timeout=30.0)
+            draft_response.raise_for_status()
+            st.session_state["note_draft"] = draft_response.json()
+            st.session_state.pop("note_notice", None)
+            st.rerun()
+        except httpx.HTTPError as exc:
+            _show_note_error(exc)
+    draft = st.session_state.get("note_draft")
+    if draft and draft.get("case_id") == selected and draft.get("status") == "open":
+        st.write("**Case ID**", draft["case_id"])
+        st.caption(f"Revision {draft['revision']}")
+        edited = st.text_area("Exact note", value=draft["body"], height=220,
+                              key=f"draft-body-{draft['draft_id']}-{draft['revision']}")
+        st.markdown('<div class="section-label">Supporting evidence</div>', unsafe_allow_html=True)
+        for item in draft.get("evidence", []):
+            st.write(f"**{item['source_id']}**")
+            st.write(item["excerpt"])
+        save_col, approve_col, discard_col = st.columns(3)
+        save_edit = save_col.button("Save edit", use_container_width=True)
+        approve_note = approve_col.button("Approve and file", type="primary", use_container_width=True)
+        discard_note = discard_col.button("Discard draft", use_container_width=True)
+        if save_edit:
+            _submit_note("patch", f"{API_URL}/note-drafts/{draft['draft_id']}", edited, draft["revision"], "note_draft")
+        elif approve_note:
+            _submit_note("post", f"{API_URL}/note-drafts/{draft['draft_id']}/approve", edited, draft["revision"], "note_filed")
+        elif discard_note:
+            _submit_note("post", f"{API_URL}/note-drafts/{draft['draft_id']}/discard", None, draft["revision"], "note_discarded")
+    notice = st.session_state.get("note_notice")
+    if notice:
+        st.success(notice)
+
+st.divider()
+with st.container(border=True):
     fraud_header, fraud_action = st.columns([3, 1], vertical_alignment="bottom")
     with fraud_header:
-        st.markdown('<div class="eyebrow">03 / Fictional fraud review</div>', unsafe_allow_html=True)
+        st.markdown('<div class="eyebrow">04 / Review priority</div>', unsafe_allow_html=True)
         st.subheader("Review priority signals")
         st.caption("A fictional review aid, not a fraud finding or probability. An analyst decides what to do.")
     with fraud_action:
