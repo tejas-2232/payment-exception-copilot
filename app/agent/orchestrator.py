@@ -1,6 +1,7 @@
 """Read-only investigation with bounded recommendations and verified evidence."""
 import json
 import os
+import re
 from typing import Protocol
 
 import httpx
@@ -60,6 +61,33 @@ def get_provider() -> Provider:
     raise ProviderError("Unknown model provider")
 
 
+def _codes(pattern: str, text: str) -> set[str]:
+    return {item.lower() for item in re.findall(pattern, text, re.I)}
+
+
+def lumen_account_mismatch(case: Case) -> bool:
+    if case.partner_id != "lumen":
+        return False
+    response = case.partner_response or ""
+    notes = " ".join(case.notes)
+    response_codes = _codes(r"\bLM-\d+\b", response)
+    note_codes = _codes(r"\bLM-\d+\b", notes)
+    return bool("account" in response.lower() and "does not match" in response.lower()
+                and response_codes and note_codes and response_codes.isdisjoint(note_codes))
+
+
+def keystone_remittance_mismatch(case: Case) -> bool:
+    if case.partner_id != "keystone":
+        return False
+    response = case.partner_response or ""
+    notes = " ".join(case.notes)
+    response_codes = _codes(r"\bKS-\d+\b", response)
+    note_codes = _codes(r"\bKS-\d+\b", notes)
+    lowered = response.lower()
+    reported = "remittance" in lowered and ("not recognized" in lowered or "does not match" in lowered)
+    return bool(reported and response_codes and note_codes and response_codes.isdisjoint(note_codes))
+
+
 def investigate(case: Case, provider: Provider | None = None) -> Recommendation:
     missing = []
     if not case.payment.beneficiary_bank_identifier:
@@ -86,6 +114,14 @@ def investigate(case: Case, provider: Provider | None = None) -> Recommendation:
         category, doc, query = "missing_beneficiary_name", "P-02", "missing beneficiary name"
         summary = "The beneficiary name is missing."
         action = "Recommend that the analyst request the missing beneficiary name through an approved channel."
+    elif lumen_account_mismatch(case):
+        category, doc, query = "partner_account_mismatch", "L-01", "lumen account does not match"
+        summary = "The Lumen account in the partner response differs from the account in the case note."
+        action = "Ask the analyst to compare the Lumen account codes and verify the correct account. Do not resubmit the payment."
+    elif keystone_remittance_mismatch(case):
+        category, doc, query = "partner_remittance_mismatch", "K-01", "keystone remittance reference not recognized"
+        summary = "The Keystone remittance reference in the partner response differs from the case note."
+        action = "Ask the analyst to compare the Keystone remittance references and verify the correct details. Do not resubmit the payment."
     else:
         category, doc, query = "insufficient_evidence", None, ""
         summary = "The next step cannot be determined from the available case information."

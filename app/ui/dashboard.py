@@ -48,6 +48,8 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"] {font-family: 'DM
 [data-testid="stSidebar"] {background: #102b32; border-right: 0;}
 [data-testid="stSidebar"] * {color: #eaf4f1;}
 [data-testid="stSidebar"] [data-baseweb="select"] * {color: #172230;}
+[data-testid="stSidebar"] [data-testid="stButton"] button,
+[data-testid="stSidebar"] [data-testid="stButton"] button * {color:#102b32 !important; background:#e7f3f0;}
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {color: #b8cdca;}
 .block-container {padding-top: 4.5rem; padding-bottom: 4rem; max-width: 1500px;}
 h1, h2, h3 {font-family: 'Manrope', sans-serif; letter-spacing: -0.035em;}
@@ -99,7 +101,11 @@ with st.sidebar:
             queue_response.raise_for_status()
             for row in queue_response.json():
                 score = f"{row['score']}/100" if row["score"] is not None else "Unscored"
-                st.write(f"{row['case_id']} · {score}")
+                band = row.get("score_band") or ""
+                label = f"{row['case_id']} · {score}"
+                if row["score"] is not None and band:
+                    label = f"{label} · {band}"
+                st.write(label)
         except (httpx.HTTPError, ValueError):
             st.caption("Priority queue unavailable; review cases individually.")
     selected = st.selectbox("Select a case", [case["case_id"] for case in cases])
@@ -107,6 +113,30 @@ with st.sidebar:
         st.session_state["note_case"] = selected
         st.session_state.pop("note_draft", None)
         st.session_state.pop("note_notice", None)
+    if st.button("Recent investigations", use_container_width=True):
+        st.session_state["show_recent_runs"] = not st.session_state.get("show_recent_runs", False)
+    if st.session_state.get("show_recent_runs"):
+        runs = st.session_state.get("recent_runs", [])
+        if not runs:
+            st.caption("No investigation has been run in this session.")
+        for item in runs:
+            label = item["category"].replace("_", " ")
+            st.write(f"{item['case_id']} · {label}")
+            st.caption(f"{item['mode']} · {item['summary']}")
+    st.caption("FILED NOTES")
+    try:
+        filed_response = httpx.get(f"{API_URL}/cases/{selected}/note-history", timeout=5.0)
+        filed_response.raise_for_status()
+        filed_notes = filed_response.json().get("approved_notes", [])
+    except (httpx.HTTPError, ValueError):
+        filed_notes = []
+        st.caption("Filed notes are unavailable.")
+    else:
+        if not filed_notes:
+            st.caption("No analyst note has been filed for this case.")
+        for note in filed_notes:
+            st.caption(note["approved_at"])
+            st.write(note["body"])
     st.divider()
     st.caption("INVESTIGATION MODE")
     mode = st.radio("Choose workflow", ["offline", "agent"],
@@ -159,6 +189,11 @@ if run:
         st.session_state["investigation"] = result
         st.session_state["investigation_mode"] = mode
         st.session_state.setdefault("investigation_costs", []).append((result.get("metrics") or {}).get("estimated_cost_usd"))
+        recent = st.session_state.setdefault("recent_runs", [])
+        recent.insert(0, {"case_id": result["case_id"], "mode": mode, "category": result["category"],
+                          "summary": result["case_summary"]})
+        del recent[8:]
+        st.session_state["show_recent_runs"] = True
         st.rerun()
     except (httpx.HTTPError, ValueError) as exc:
         st.session_state.setdefault("investigation_costs", []).append(None)
@@ -347,12 +382,19 @@ with st.container(border=True):
             score_col, context_col = st.columns([1, 3])
             with score_col:
                 st.metric("Review priority", f"{review['score']} / {review['score_max']}")
+                st.caption((review.get("score_band") or "not scored").replace("_", " "))
+                st.progress(min(max(review["score"], 0), review["score_max"]) / review["score_max"])
             with context_col:
                 st.write("**Signals identified**" if review["signals"] else "**No configured signals identified**")
-                st.caption("A zero score does not establish that a payment is safe. This score is not a fraud probability.")
+                st.caption("The band orders the review queue. It is not a fraud probability, and zero does not mean the payment is safe.")
+            rubric = review.get("rubric") or []
+            if rubric:
+                st.markdown('<div class="section-label">Priority rubric</div>', unsafe_allow_html=True)
+                for check in rubric:
+                    state = "Identified" if check["fired"] else "Not identified"
+                    st.write(f"**{state} · {check['title']} · +{check['points']}**")
+                    st.caption(check["explanation"])
             for signal in review["signals"]:
-                st.write(f"**{signal['title']} · +{signal['points']} points**")
-                st.write(signal["explanation"])
                 for source_id in signal["evidence_ids"]:
                     st.caption(f"{source_id}: {review['evidence'][source_id]}")
         st.write("**Suggested review:**", review["next_step"])

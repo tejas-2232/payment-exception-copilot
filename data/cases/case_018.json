@@ -1,0 +1,16 @@
+{
+  "case_id": "CASE-018",
+  "partner_id": "keystone",
+  "status": "open",
+  "exception_message": "Beneficiary bank identifier missing",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-018",
+    "amount": 5000.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Cedar",
+    "beneficiary_bank_identifier": null
+  },
+  "notes": [
+    "Queued for repair with Keystone."
+  ]
+}

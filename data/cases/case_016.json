@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-016",
+  "partner_id": "lumen",
+  "status": "open",
+  "exception_message": "Partner sent an account confirmation",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-016",
+    "amount": 860.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Birch",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-16"
+  },
+  "partner_response": "Beneficiary account LM-3300 matches the account on file.",
+  "notes": [
+    "The payment instruction lists Lumen account LM-3300."
+  ]
+}

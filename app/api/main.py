@@ -107,7 +107,8 @@ async def get_fraud_review_queue() -> list[dict]:
         rows = []
         for case in load_cases():
             review = review_fraud(case, load_context(case.case_id))
-            rows.append({"case_id": case.case_id, "status": review.status, "score": review.score})
+            rows.append({"case_id": case.case_id, "status": review.status, "score": review.score,
+                          "score_band": review.score_band})
         return sorted(rows, key=lambda row: (row["score"] is not None, -(row["score"] or 0), row["case_id"]))
     try:
         return await run_in_threadpool(build_queue)
