@@ -1,5 +1,6 @@
 import os
 import logging
+import sqlite3
 from pathlib import Path
 from time import perf_counter
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,9 @@ from app.agent.orchestrator import ProviderError, investigate
 from app.agent.fraud_review import FraudReview, load_context, review_fraud
 from app.agent.fraud_agent import fraud_review_with_agent
 from app.agent.langchain_agent import investigate_with_agent
+from app.notes.drafting import prepare_draft
+from app.notes.models import ApprovedNote, DiscardDraft, NoteDraft, NoteHistory, NoteUpdate
+from app.notes.store import NoteError, approve_draft, create_draft, discard_draft, list_notes, update_draft
 from app.schemas import Case, InvestigationMetrics, InvestigationRequest, Recommendation
 
 CASES_DIR = Path(__file__).resolve().parents[2] / "data" / "cases"
@@ -110,3 +114,70 @@ async def get_fraud_review_queue() -> list[dict]:
     except (OSError, ValueError):
         logger.warning("Fraud review queue unavailable")
         raise HTTPException(status_code=503, detail="Review queue unavailable; ask an analyst to review cases.") from None
+
+
+def _note_error(exc: NoteError) -> HTTPException:
+    return HTTPException(status_code=exc.status, detail=exc.detail)
+
+
+@app.post("/cases/{case_id}/note-drafts", response_model=NoteDraft)
+async def create_note_draft(case_id: str) -> NoteDraft:
+    """Prepare a draft from the read-only investigation. The case file is not changed."""
+    case = await get_case(case_id)
+    try:
+        body, evidence = await run_in_threadpool(prepare_draft, case)
+        draft = await run_in_threadpool(create_draft, case.case_id, body, evidence)
+    except NoteError as exc:
+        raise _note_error(exc) from None
+    except (ProviderError, OSError, sqlite3.Error, ValueError):
+        logger.warning("Note draft failed")
+        raise HTTPException(status_code=503, detail="A note draft could not be prepared. The case file was not changed.") from None
+    return NoteDraft.model_validate(draft)
+
+
+@app.patch("/note-drafts/{draft_id}", response_model=NoteDraft)
+async def edit_note_draft(draft_id: str, request: NoteUpdate) -> NoteDraft:
+    try:
+        draft = await run_in_threadpool(update_draft, draft_id, request.body, request.expected_revision)
+    except NoteError as exc:
+        raise _note_error(exc) from None
+    except sqlite3.Error:
+        logger.warning("Note draft update failed")
+        raise HTTPException(status_code=503, detail="The draft could not be saved. No case note was filed.") from None
+    return NoteDraft.model_validate(draft)
+
+
+@app.post("/note-drafts/{draft_id}/discard", response_model=NoteDraft)
+async def discard_note_draft(draft_id: str, request: DiscardDraft) -> NoteDraft:
+    try:
+        draft = await run_in_threadpool(discard_draft, draft_id, request.expected_revision)
+    except NoteError as exc:
+        raise _note_error(exc) from None
+    except sqlite3.Error:
+        logger.warning("Note draft discard failed")
+        raise HTTPException(status_code=503, detail="The draft could not be discarded. No case note was filed.") from None
+    return NoteDraft.model_validate(draft)
+
+
+@app.post("/note-drafts/{draft_id}/approve", response_model=ApprovedNote)
+async def approve_note_draft(draft_id: str, request: NoteUpdate) -> ApprovedNote:
+    """File the exact wording in the request. A repeated submission of that wording does not create a second note."""
+    try:
+        note = await run_in_threadpool(approve_draft, draft_id, request.body, request.expected_revision)
+    except NoteError as exc:
+        raise _note_error(exc) from None
+    except sqlite3.Error:
+        logger.warning("Note approval failed")
+        raise HTTPException(status_code=503, detail="The note could not be filed. The case file was not changed.") from None
+    return ApprovedNote.model_validate(note)
+
+
+@app.get("/cases/{case_id}/note-history", response_model=NoteHistory)
+async def get_note_history(case_id: str) -> NoteHistory:
+    case = await get_case(case_id)
+    try:
+        notes = await run_in_threadpool(list_notes, case.case_id)
+    except sqlite3.Error:
+        logger.warning("Note history unavailable")
+        raise HTTPException(status_code=503, detail="Case history is unavailable. The case file was not changed.") from None
+    return NoteHistory(case_id=case.case_id, file_notes=list(case.notes), approved_notes=notes)
