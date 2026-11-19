@@ -57,17 +57,33 @@ h1 {font-size: 2.25rem !important; font-weight: 800 !important;}
 h2 {font-size: 1.18rem !important; font-weight: 700 !important;}
 h3 {font-size: 1rem !important; font-weight: 700 !important;}
 [data-testid="stVerticalBlockBorderWrapper"]:has(> div > div > div > div > .eyebrow) {background: #fff; border-radius: 14px;}
-[data-testid="stMetric"] {background:#fff; border: 1px solid #e1e7e6; border-radius: 12px; padding: 15px 18px;}
+[data-testid="stMetric"] {background:#fff; border: 1px solid #e1e7e6; border-radius: 12px; padding: 15px 18px;
+  animation: desk-rise .48s ease; transition: transform .18s ease, box-shadow .18s ease;}
+[data-testid="stMetric"]:hover {transform: translateY(-3px); box-shadow: 0 10px 24px rgba(16,43,50,.08);}
 [data-testid="stMetricLabel"] {color:#667874; font-size:.77rem;}
 [data-testid="stMetricValue"] {color:#163b39; font-family:'Manrope',sans-serif; font-size:1.25rem;}
+[data-testid="stButton"] button {transition: transform .16s ease, background .16s ease, box-shadow .16s ease;}
+[data-testid="stButton"] button:hover {transform: translateY(-1px);}
+[data-testid="stButton"] button:active {transform: translateY(0) scale(.98);}
 [data-testid="stButton"] button[kind="primary"] {background:#167a69; border-color:#167a69; border-radius:9px; font-weight:700;}
-[data-testid="stButton"] button[kind="primary"]:hover {background:#0e6254; border-color:#0e6254;}
-[data-testid="stTabs"] button {font-weight:600;}
+[data-testid="stButton"] button[kind="primary"]:hover {background:#0e6254; border-color:#0e6254; box-shadow: 0 8px 18px rgba(22,122,105,.28);}
+[data-testid="stTabs"] button {font-weight:600; transition: color .16s ease;}
+[data-testid="stAlert"], [data-testid="stProgress"] {animation: desk-rise .35s ease both;}
+[data-testid="stVerticalBlockBorderWrapper"] {animation: desk-rise .5s ease both;}
+.block-container {animation: desk-rise .42s ease;}
 .eyebrow {color:#167a69; font-size:.72rem; font-weight:800; letter-spacing:.15em; text-transform:uppercase; margin-bottom:.3rem;}
-.brandmark {font-family:'Manrope',sans-serif; font-size:1.22rem; font-weight:800; letter-spacing:-.04em; color:#fff;}
+.brandmark {font-family:'Manrope',sans-serif; font-size:1.22rem; font-weight:800; letter-spacing:-.04em; color:#fff; animation: desk-rise .4s ease;}
 .brandsub {color:#a9c3bc; font-size:.73rem; letter-spacing:.11em; text-transform:uppercase; margin-top:.3rem;}
 .hero-note {color:#61716e; font-size:.98rem; margin:0 0 1rem;}
 .section-label {color:#687a76; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; margin:0 0 .4rem;}
+.score-track {height: 8px; background:#e6eeec; border-radius:99px; overflow:hidden; margin:.35rem 0 .2rem;}
+.score-fill {height:100%; width:0; border-radius:99px; background:linear-gradient(90deg,#0e6254,#3dbea3); animation: desk-fill .8s cubic-bezier(.2,.8,.2,1) forwards;}
+@keyframes desk-rise {from {opacity:0; transform:translateY(12px);} to {opacity:1; transform:none;}}
+@keyframes desk-fill {from {width:0;} to {width:var(--score);}}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {animation:none !important; transition:none !important;}
+  .score-fill {width:var(--score);}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -385,7 +401,10 @@ with st.container(border=True):
             with score_col:
                 st.metric("Review priority", f"{review['score']} / {review['score_max']}")
                 st.caption((review.get("score_band") or "not scored").replace("_", " "))
-                st.progress(min(max(review["score"], 0), review["score_max"]) / review["score_max"])
+                score_width = f"{min(max(review['score'], 0), review['score_max']) / review['score_max'] * 100:.1f}%"
+                st.markdown(
+                    f'<div class="score-track" aria-hidden="true"><div class="score-fill" style="--score:{score_width}"></div></div>',
+                    unsafe_allow_html=True)
             with context_col:
                 st.write(review.get("review_summary") or "")
                 st.caption("The same checks run for every case. The band orders the queue. It is not a fraud probability, and zero does not mean the payment is safe.")
