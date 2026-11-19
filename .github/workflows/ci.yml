@@ -17,4 +17,6 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt
       - run: python -m ruff check .
+      - name: Fail if case files and fraud labels get out of step
+        run: python -m pytest -q tests/test_case_fraud_alignment.py
       - run: python -m pytest -q
