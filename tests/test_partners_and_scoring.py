@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.agent.fraud_review import review_fraud, score_band
+from app.agent.fraud_review import load_context, review_fraud, score_band
 from app.agent.orchestrator import investigate
 from app.api.main import load_cases
 from app.retrieval.search import search_procedures
@@ -62,3 +63,30 @@ def test_review_rubric_shows_fired_and_silent_checks():
     api = client.post("/fraud-reviews", json={"case_id": "CASE-015", "mode": "offline"}).json()
     assert api["score_band"] == "watch"
     assert len(api["rubric"]) == 3
+
+
+def test_every_case_uses_the_same_review_explanation():
+    expected = {item["case_id"]: item for item in json.loads(Path("evaluations/fraud_review_cases.json").read_text())}
+    cases = load_cases()
+    assert len(cases) >= len(expected)
+    for case in cases:
+        review = review_fraud(case, load_context(case.case_id))
+        assert case.exception_message in review.review_summary
+        assert review.checklist[-1].startswith("Record the analyst decision")
+        assert "case.exception" in review.evidence
+        if review.score is not None:
+            assert review.amount_multiple is not None
+            assert "supplied" in review.history_note
+            amount_check = next(item for item in review.rubric if item.signal_id == "unusual_amount")
+            assert f"{review.amount_multiple:.1f} times" in amount_check.explanation
+        if case.case_id in expected:
+            assert review.score == expected[case.case_id]["score"]
+            assert {signal.signal_id for signal in review.signals} == set(expected[case.case_id]["signals"])
+    high = review_fraud(cases[-1], load_context("CASE-018"))
+    assert high.case_id == "CASE-018"
+    assert high.amount_multiple == 11.1
+    assert high.checklist[0].startswith("Confirm the missing bank identifier")
+    quiet = next(case for case in cases if case.case_id == "CASE-016")
+    quiet_review = review_fraud(quiet, load_context(quiet.case_id))
+    assert quiet_review.score == 0
+    assert "does not establish that the payment is safe" in quiet_review.checklist[-2]

@@ -106,6 +106,8 @@ with st.sidebar:
                 if row["score"] is not None and band:
                     label = f"{label} · {band}"
                 st.write(label)
+                if row.get("exception"):
+                    st.caption(row["exception"])
         except (httpx.HTTPError, ValueError):
             st.caption("Priority queue unavailable; review cases individually.")
     selected = st.selectbox("Select a case", [case["case_id"] for case in cases])
@@ -385,8 +387,10 @@ with st.container(border=True):
                 st.caption((review.get("score_band") or "not scored").replace("_", " "))
                 st.progress(min(max(review["score"], 0), review["score_max"]) / review["score_max"])
             with context_col:
-                st.write("**Signals identified**" if review["signals"] else "**No configured signals identified**")
-                st.caption("The band orders the review queue. It is not a fraud probability, and zero does not mean the payment is safe.")
+                st.write(review.get("review_summary") or "")
+                st.caption("The same checks run for every case. The band orders the queue. It is not a fraud probability, and zero does not mean the payment is safe.")
+                if review.get("history_note"):
+                    st.caption(review["history_note"])
             rubric = review.get("rubric") or []
             if rubric:
                 st.markdown('<div class="section-label">Priority rubric</div>', unsafe_allow_html=True)
@@ -397,7 +401,9 @@ with st.container(border=True):
             for signal in review["signals"]:
                 for source_id in signal["evidence_ids"]:
                     st.caption(f"{source_id}: {review['evidence'][source_id]}")
-        st.write("**Suggested review:**", review["next_step"])
+        st.markdown('<div class="section-label">Verification checklist</div>', unsafe_allow_html=True)
+        for step in review.get("checklist") or [review["next_step"]]:
+            st.write("- " + step)
         if review["evidence"].get("context.analyst_note"):
             st.write("**Context to verify:**", review["evidence"]["context.analyst_note"])
         with st.expander("Fictional review inputs"):
