@@ -368,7 +368,8 @@ with right:
                 st.write("**Tools used:**", " → ".join(result.get("tool_activity", [])) or "No agent tools used")
                 searches = result.get("search_attempts") or []
                 if searches:
-                    st.write("**Searches:**", " · ".join(f"{item['query']} ({item['status']})" for item in searches))
+                    st.write("**Searches:**", " · ".join(
+                        f"{item.get('phase') or 'first search'}: {item['query']} ({item['status']})" for item in searches))
                 metrics = result.get("metrics") or {}
                 duration = metrics.get("total_duration_ms")
                 first = metrics.get("first_model_output_ms")

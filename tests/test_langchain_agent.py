@@ -236,3 +236,54 @@ def test_case_003_accepts_text_block_response_without_bypassing_validation():
     assert result.category == "conflicting_information"
     assert result.evidence[0].document_id == "P-03"
     assert result.escalate_to_human
+
+
+def test_read_only_tools_compare_facts_without_writing():
+    from app.agent.langchain_agent import (
+        compare_reported_codes, filed_note_snapshot, load_partner, proposed_note, read_allowed_procedure, review_signal_snapshot,
+    )
+
+    case = next(item for item in load_cases() if item.case_id == "CASE-015")
+    compared = compare_reported_codes(case)
+    assert compared["codes"]["LM"]["differ"]
+    assert "does not match" in read_allowed_procedure(load_partner("lumen"), "L-01")["text"].lower()
+    assert read_allowed_procedure(load_partner("lumen"), "N-01")["status"] == "not_allowed"
+    signals = review_signal_snapshot(case)
+    assert signals["score"] == 25 and signals["note"].startswith("The server computed")
+    assert filed_note_snapshot(case.case_id)["notes"] == []
+    draft = proposed_note(case)
+    assert draft["persisted"] is False and case.case_id in draft["body"]
+
+
+def test_one_retry_accepts_a_corrected_citation():
+    case = next(item for item in load_cases() if item.case_id == "CASE-015")
+    corrected = {"category": "partner_account_mismatch", "passage_ids": ["L-01-001"],
+                 "source_ids": ["partner_response", "note.1"]}
+    model = ToolFake(responses=[
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "account code mismatch"}, "id": "3"}]),
+        AIMessage(content=json.dumps({"category": "partner_account_mismatch", "passage_ids": ["L-01-001"], "source_ids": []})),
+        AIMessage(content=json.dumps(corrected)),
+    ])
+    result = investigate_with_agent(case, model)
+    assert result.category == "partner_account_mismatch"
+    assert [item.source_id for item in result.case_evidence] == ["partner_response", "note.1"]
+    assert [item.phase for item in result.search_attempts] == ["first search"]
+
+
+def test_second_search_is_labeled_retry_and_a_second_miss_stays_rejected():
+    case = next(item for item in load_cases() if item.case_id == "CASE-015")
+    calls = [
+        AIMessage(content="", tool_calls=[{"name": "get_case", "args": {}, "id": "1"}]),
+        AIMessage(content="", tool_calls=[{"name": "get_partner_profile", "args": {}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "account code"}, "id": "3"}]),
+        AIMessage(content="", tool_calls=[{"name": "search_partner_procedures", "args": {"query": "LM-2201 LM-2208"}, "id": "4"}]),
+    ]
+    accepted = json.dumps({"category": "partner_account_mismatch", "passage_ids": ["L-01-001"],
+                           "source_ids": ["partner_response", "note.1"]})
+    result = investigate_with_agent(case, ToolFake(responses=[*calls, AIMessage(content=accepted)]))
+    assert [item.phase for item in result.search_attempts] == ["first search", "retry"]
+    omitted = json.dumps({"category": "partner_account_mismatch", "passage_ids": ["L-01-001"], "source_ids": []})
+    with pytest.raises(ProviderError):
+        investigate_with_agent(case, ToolFake(responses=[*calls, AIMessage(content=omitted), AIMessage(content=omitted)]))

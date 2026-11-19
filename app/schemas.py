@@ -37,6 +37,7 @@ class CaseEvidence(BaseModel):
 class SearchAttempt(BaseModel):
     query: str
     status: str
+    phase: str = "first search"
 
 
 class InvestigationRequest(BaseModel):
