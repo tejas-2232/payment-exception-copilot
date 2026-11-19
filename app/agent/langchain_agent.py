@@ -28,6 +28,7 @@ CATEGORIES = {
     "partner_beneficiary_mismatch": ("H-01", "The Harbor beneficiary information may differ across sources.", "Ask the analyst to compare and verify the beneficiary name; do not change or resubmit the payment."),
     "partner_account_mismatch": ("L-01", "The Lumen account may differ across sources.", "Ask the analyst to compare and verify the Lumen account; do not resubmit the payment."),
     "partner_remittance_mismatch": ("K-01", "The Keystone remittance reference may differ across sources.", "Ask the analyst to compare and verify the remittance reference; do not resubmit the payment."),
+    "name_check_mismatch": ("V-01", "The name check result may be no match.", "Ask the analyst to compare the payment name with the name from the name check; do not replace the name or resubmit the payment."),
     "insufficient_evidence": (None, "The available evidence does not support a specific recommendation.", "Ask the analyst to investigate and review the case."),
 }
 
@@ -75,6 +76,9 @@ def supports_category(category: str, case: Case, cited_sources: list[str]) -> bo
         return bool(case.partner_id == "lumen" and "does not match" in response and "account" in response
                     and response_codes and note_codes
                     and {x.lower() for x in response_codes}.isdisjoint({x.lower() for x in note_codes}))
+    if category == "name_check_mismatch":
+        return ("name check result: no match" in response and "name check result: close" not in response
+                and "partner_response" in cited_sources)
     if category == "partner_remittance_mismatch":
         response_codes = set(re.findall(r"\bKS-\d+\b", response, re.I))
         note_codes = set(re.findall(r"\bKS-\d+\b", notes, re.I))
@@ -178,7 +182,8 @@ def _investigate_with_agent(case: Case, model, metrics: ModelMetricsCallback) ->
         "Never take action or invent evidence. Return JSON only with category, passage_ids and source_ids. "
         "The latter two must be arrays of exact retrieved passage IDs and selected case source IDs. "
         "Use partner_reference_mismatch only with N-01, partner_beneficiary_mismatch only with H-01, "
-        "partner_account_mismatch only with L-01, or partner_remittance_mismatch only with K-01. "
+        "partner_account_mismatch only with L-01, partner_remittance_mismatch only with K-01, "
+        "or name_check_mismatch only with V-01 when the partner says the name check result is no match. "
         "For those, cite partner_response and at least one note source as well as the procedure; for Harbor also cite payment.beneficiary_name. "
         "Other categories: missing_bank_identifier (P-01), missing_beneficiary_name (P-02), "
         "conflicting_information (P-03), insufficient_evidence (no passage). "
@@ -225,7 +230,7 @@ def _investigate_with_agent(case: Case, model, metrics: ModelMetricsCallback) ->
         elif cited:
             raise ValueError("Unexpected evidence for abstention")
         if category in {"partner_reference_mismatch", "partner_beneficiary_mismatch",
-                        "partner_account_mismatch", "partner_remittance_mismatch"}:
+                        "partner_account_mismatch", "partner_remittance_mismatch", "name_check_mismatch"}:
             if "partner_response" not in answer["source_ids"] or not any(x.startswith("note.") for x in answer["source_ids"]):
                 raise ValueError("Missing cross-source evidence")
         if category == "partner_beneficiary_mismatch" and "payment.beneficiary_name" not in answer["source_ids"]:

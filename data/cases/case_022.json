@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-022",
+  "partner_id": "lumen",
+  "status": "open",
+  "exception_message": "Several new beneficiaries were added before this payment",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-022",
+    "amount": 640.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Aspen",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-22"
+  },
+  "partner_response": "Lumen queued the payment for review.",
+  "notes": [
+    "Three new payees were added in one day, including Example Aspen."
+  ]
+}

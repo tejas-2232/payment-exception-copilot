@@ -13,6 +13,7 @@ FINDING_LABELS = {
     "partner_beneficiary_mismatch": "Beneficiary name does not match",
     "partner_account_mismatch": "Account does not match",
     "partner_remittance_mismatch": "Remittance reference does not match",
+    "name_check_mismatch": "Name check does not match",
     "insufficient_evidence": "Not enough evidence",
 }
 MISSING_LABELS = {

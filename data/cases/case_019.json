@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-019",
+  "partner_id": "northstar",
+  "status": "open",
+  "exception_message": "First payment to a beneficiary with no prior history",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-019",
+    "amount": 500.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Rowan",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-19"
+  },
+  "partner_response": "Northstar accepted the payment details for review.",
+  "notes": [
+    "First payment to this beneficiary. No earlier payment to Example Rowan is on file."
+  ]
+}

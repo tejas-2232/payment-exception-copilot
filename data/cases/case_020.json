@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-020",
+  "partner_id": "harbor",
+  "status": "open",
+  "exception_message": "Partner returned a name check that does not match",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-020",
+    "amount": 700.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Willow",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-20"
+  },
+  "partner_response": "Name check result: no match. The account name on file is Example Willa.",
+  "notes": [
+    "The payment record says Example Willow."
+  ]
+}

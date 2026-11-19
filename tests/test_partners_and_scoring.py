@@ -65,6 +65,30 @@ def test_review_rubric_shows_fired_and_silent_checks():
     assert len(api["rubric"]) == 3
 
 
+def test_name_check_cites_v01_and_close_result_abstains():
+    cases = {case.case_id: case for case in load_cases()}
+    matched = investigate(cases["CASE-020"])
+    assert matched.category == "name_check_mismatch"
+    assert {item.document_id for item in matched.evidence} == {"V-01"}
+    assert matched.escalate_to_human
+    close = investigate(cases["CASE-021"])
+    assert close.category == "insufficient_evidence"
+    assert close.evidence == []
+    for partner in ("northstar.json", "harbor.json", "lumen.json", "keystone.json"):
+        text = Path("data/partners", partner).read_text(encoding="utf-8")
+        assert "V-01" in text
+    first = review_fraud(cases["CASE-019"], load_context("CASE-019"))
+    assert first.score == 25
+    assert "first payment to this beneficiary" in first.review_summary
+    assert any("first payment" in step for step in first.checklist)
+    young = review_fraud(cases["CASE-024"], load_context("CASE-024"))
+    assert young.score == 25
+    assert "newly opened payee account" in young.review_summary
+    many = review_fraud(cases["CASE-022"], load_context("CASE-022"))
+    assert any("new payees" in step for step in many.checklist)
+    assert {signal.signal_id for signal in many.signals} <= {"new_beneficiary", "recent_change", "unusual_amount"}
+
+
 def test_every_case_uses_the_same_review_explanation():
     expected = {item["case_id"]: item for item in json.loads(Path("evaluations/fraud_review_cases.json").read_text())}
     cases = load_cases()
@@ -82,7 +106,7 @@ def test_every_case_uses_the_same_review_explanation():
         if case.case_id in expected:
             assert review.score == expected[case.case_id]["score"]
             assert {signal.signal_id for signal in review.signals} == set(expected[case.case_id]["signals"])
-    high = review_fraud(cases[-1], load_context("CASE-018"))
+    high = review_fraud(next(case for case in cases if case.case_id == "CASE-018"), load_context("CASE-018"))
     assert high.case_id == "CASE-018"
     assert high.amount_multiple == 11.1
     assert high.checklist[0].startswith("Confirm the missing bank identifier")
