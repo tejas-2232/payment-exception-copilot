@@ -132,8 +132,29 @@ def _history_note(count: int | None) -> str:
     return f"The amount baseline uses {count} supplied payments."
 
 
-def _checklist(case: Case, signal_ids: set[str], *, missing: bool, multiple: float | None, history_count: int | None) -> list[str]:
+def _case_text(case: Case) -> str:
+    return " ".join([case.exception_message, case.partner_response or "", *case.notes]).lower()
+
+
+def _pattern_steps(case: Case) -> list[str]:
+    text = _case_text(case)
+    response = (case.partner_response or "").lower()
     steps = []
+    if "first payment to this beneficiary" in text:
+        steps.append("This is the first payment to this beneficiary. Confirm the destination with a contact already on file.")
+    if "new payees were added in one day" in text:
+        steps.append("Several new payees were added in one day. Review them together before any repair.")
+    if "payee account is" in text and "days old" in text:
+        steps.append("The payee account was opened recently. Confirm it is the intended account before any repair.")
+    if "name check result: no match" in response:
+        steps.append("The name check did not match. Compare the payment name with the account name and do not replace either one.")
+    if "name check result: close" in response:
+        steps.append("The name check is only close. Compare the spellings and do not treat that as a confirmed mismatch.")
+    return steps
+
+
+def _checklist(case: Case, signal_ids: set[str], *, missing: bool, multiple: float | None, history_count: int | None) -> list[str]:
+    steps = _pattern_steps(case)
     if not case.payment.beneficiary_bank_identifier:
         steps.append("Confirm the missing bank identifier with a contact already on file before any repair.")
     if not case.payment.beneficiary_name:
@@ -158,7 +179,21 @@ def _summary(case: Case, score: int | None, band: str, signal_ids: set[str], mul
     fired = ", ".join(signal_ids) if signal_ids else "no configured signal"
     amount = f" Amount is {multiple:.1f} times the supplied average." if multiple is not None else ""
     score_text = "not scored" if score is None else f"{score}/100 {band}"
-    return f"{case.case_id}: {case.exception_message}. Queue priority {score_text}; {fired}.{amount}"
+    noted = []
+    text = _case_text(case)
+    response = (case.partner_response or "").lower()
+    if "first payment to this beneficiary" in text:
+        noted.append("first payment to this beneficiary")
+    if "new payees were added in one day" in text:
+        noted.append("several new payees in one day")
+    if "payee account is" in text and "days old" in text:
+        noted.append("newly opened payee account")
+    if "name check result: no match" in response:
+        noted.append("name check no match")
+    if "name check result: close" in response:
+        noted.append("name check close")
+    extra = f" Also noted: {', '.join(noted)}." if noted else ""
+    return f"{case.case_id}: {case.exception_message}. Queue priority {score_text}; {fired}.{amount}{extra}"
 
 
 def review_fraud(case: Case, context: FraudContext | None) -> FraudReview:

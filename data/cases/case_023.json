@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-023",
+  "partner_id": "keystone",
+  "status": "open",
+  "exception_message": "Payment amount is far above the payer usual amount",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-023",
+    "amount": 9000.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Hazel",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-23"
+  },
+  "partner_response": "Keystone accepted the remittance details and asked for an amount review.",
+  "notes": [
+    "Earlier payments to this beneficiary were a few hundred dollars."
+  ]
+}

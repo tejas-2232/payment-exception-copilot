@@ -65,6 +65,11 @@ def _codes(pattern: str, text: str) -> set[str]:
     return {item.lower() for item in re.findall(pattern, text, re.I)}
 
 
+def name_check_mismatch(case: Case) -> bool:
+    response = (case.partner_response or "").lower()
+    return "name check result: no match" in response and "name check result: close" not in response
+
+
 def lumen_account_mismatch(case: Case) -> bool:
     if case.partner_id != "lumen":
         return False
@@ -114,6 +119,10 @@ def investigate(case: Case, provider: Provider | None = None) -> Recommendation:
         category, doc, query = "missing_beneficiary_name", "P-02", "missing beneficiary name"
         summary = "The beneficiary name is missing."
         action = "Recommend that the analyst request the missing beneficiary name through an approved channel."
+    elif name_check_mismatch(case):
+        category, doc, query = "name_check_mismatch", "V-01", "name check result no match"
+        summary = "The partner name check result is no match."
+        action = "Ask the analyst to compare the payment name with the name from the name check. Do not replace the name or resubmit the payment."
     elif lumen_account_mismatch(case):
         category, doc, query = "partner_account_mismatch", "L-01", "lumen account does not match"
         summary = "The Lumen account in the partner response differs from the account in the case note."

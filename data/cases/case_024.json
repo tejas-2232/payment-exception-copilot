@@ -1,0 +1,17 @@
+{
+  "case_id": "CASE-024",
+  "partner_id": "northstar",
+  "status": "open",
+  "exception_message": "Payment to a newly opened beneficiary account",
+  "payment": {
+    "payment_id": "FICTIONAL-PAY-024",
+    "amount": 540.0,
+    "currency": "USD",
+    "beneficiary_name": "Example Holly",
+    "beneficiary_bank_identifier": "FICTIONAL-BANK-24"
+  },
+  "partner_response": "Northstar accepted the payment details for review.",
+  "notes": [
+    "The payee account is 4 days old."
+  ]
+}
