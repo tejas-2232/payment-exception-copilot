@@ -1,8 +1,81 @@
 """Payment-operations desk for reviewing exceptions and filing an approved case note."""
+import html
 import os
 
 import httpx
 import streamlit as st
+
+FINDING_LABELS = {
+    "missing_bank_identifier": "Missing bank identifier",
+    "missing_beneficiary_name": "Missing beneficiary name",
+    "conflicting_information": "Conflicting information",
+    "partner_reference_mismatch": "Reference does not match",
+    "partner_beneficiary_mismatch": "Beneficiary name does not match",
+    "partner_account_mismatch": "Account does not match",
+    "partner_remittance_mismatch": "Remittance reference does not match",
+    "insufficient_evidence": "Not enough evidence",
+}
+MISSING_LABELS = {
+    "beneficiary_bank_identifier": "Bank identifier",
+    "beneficiary_name": "Beneficiary name",
+}
+SOURCE_LABELS = {
+    "case.exception": "Exception",
+    "payment.beneficiary_name": "Beneficiary on the payment",
+    "payment.beneficiary_bank_identifier": "Bank identifier on the payment",
+    "partner_response": "What the partner sent",
+}
+
+
+def _finding_label(category: str) -> str:
+    return FINDING_LABELS.get(category, category.replace("_", " ").capitalize())
+
+
+def _missing_label(name: str) -> str:
+    return MISSING_LABELS.get(name, name.replace("_", " "))
+
+
+def _source_label(source_id: str) -> str:
+    if source_id.startswith("note."):
+        return f"Case note {source_id.removeprefix('note.')}"
+    return SOURCE_LABELS.get(source_id, source_id.replace("_", " "))
+
+
+def _review_brief(result: dict) -> str:
+    finding = html.escape(_finding_label(result["category"]))
+    summary = html.escape(result["case_summary"])
+    steps = "".join(f"<p>{html.escape(step)}</p>" for step in result["recommended_next_steps"])
+    missing = result["missing_information"]
+    if missing:
+        chips = "".join(f"<span class='chip'>{html.escape(_missing_label(item))}</span>" for item in missing)
+        missing_row = f"<div class='brief-block'><div class='section-label'>Still needed</div><div class='chips'>{chips}</div></div>"
+    else:
+        missing_row = "<div class='brief-block'><div class='section-label'>Still needed</div><p>Nothing else is missing from the payment record.</p></div>"
+    notes = "".join(f"<p class='quiet'>{html.escape(item)}</p>" for item in result["uncertainties"])
+    evidence_cards = []
+    for item in result.get("evidence") or []:
+        evidence_cards.append(
+            "<article class='evidence-card'>"
+            f"<div class='evidence-kicker'>{html.escape(item['document_id'])} · {html.escape(item['section'])}</div>"
+            f"<p>{html.escape(item['excerpt'])}</p></article>"
+        )
+    for item in result.get("case_evidence") or []:
+        evidence_cards.append(
+            "<article class='evidence-card'>"
+            f"<div class='evidence-kicker'>{html.escape(_source_label(item['source_id']))}</div>"
+            f"<p>{html.escape(item['excerpt'])}</p></article>"
+        )
+    evidence = "".join(evidence_cards) or "<p class='quiet'>No procedure or case excerpt was returned.</p>"
+    tone = "hold" if result["category"] == "insufficient_evidence" else "ready"
+    headline = "Not enough to recommend a specific step" if tone == "hold" else "Ready for the analyst"
+    return (
+        f"<div class='brief {tone}'><div class='brief-status'>{headline}</div>"
+        f"<div class='section-label'>Do this next</div>{steps}"
+        f"<div class='brief-block'><div class='section-label'>Finding</div><p class='finding'>{finding}</p><p>{summary}</p></div>"
+        f"{missing_row}"
+        f"<div class='brief-block'><div class='section-label'>Why</div>{evidence}</div>"
+        f"{notes}</div>"
+    )
 
 API_URL = os.environ.get("CASE_API_URL", "http://127.0.0.1:8000").rstrip("/")
 
@@ -57,17 +130,45 @@ h1 {font-size: 2.25rem !important; font-weight: 800 !important;}
 h2 {font-size: 1.18rem !important; font-weight: 700 !important;}
 h3 {font-size: 1rem !important; font-weight: 700 !important;}
 [data-testid="stVerticalBlockBorderWrapper"]:has(> div > div > div > div > .eyebrow) {background: #fff; border-radius: 14px;}
-[data-testid="stMetric"] {background:#fff; border: 1px solid #e1e7e6; border-radius: 12px; padding: 15px 18px;}
+[data-testid="stMetric"] {background:#fff; border: 1px solid #e1e7e6; border-radius: 12px; padding: 15px 18px;
+  animation: desk-rise .48s ease; transition: transform .18s ease, box-shadow .18s ease;}
+[data-testid="stMetric"]:hover {transform: translateY(-3px); box-shadow: 0 10px 24px rgba(16,43,50,.08);}
 [data-testid="stMetricLabel"] {color:#667874; font-size:.77rem;}
 [data-testid="stMetricValue"] {color:#163b39; font-family:'Manrope',sans-serif; font-size:1.25rem;}
+[data-testid="stButton"] button {transition: transform .16s ease, background .16s ease, box-shadow .16s ease;}
+[data-testid="stButton"] button:hover {transform: translateY(-1px);}
+[data-testid="stButton"] button:active {transform: translateY(0) scale(.98);}
 [data-testid="stButton"] button[kind="primary"] {background:#167a69; border-color:#167a69; border-radius:9px; font-weight:700;}
-[data-testid="stButton"] button[kind="primary"]:hover {background:#0e6254; border-color:#0e6254;}
-[data-testid="stTabs"] button {font-weight:600;}
+[data-testid="stButton"] button[kind="primary"]:hover {background:#0e6254; border-color:#0e6254; box-shadow: 0 8px 18px rgba(22,122,105,.28);}
+[data-testid="stTabs"] button {font-weight:600; transition: color .16s ease;}
+[data-testid="stAlert"], [data-testid="stProgress"] {animation: desk-rise .35s ease both;}
+[data-testid="stVerticalBlockBorderWrapper"] {animation: desk-rise .5s ease both;}
+.block-container {animation: desk-rise .42s ease;}
 .eyebrow {color:#167a69; font-size:.72rem; font-weight:800; letter-spacing:.15em; text-transform:uppercase; margin-bottom:.3rem;}
-.brandmark {font-family:'Manrope',sans-serif; font-size:1.22rem; font-weight:800; letter-spacing:-.04em; color:#fff;}
+.brandmark {font-family:'Manrope',sans-serif; font-size:1.22rem; font-weight:800; letter-spacing:-.04em; color:#fff; animation: desk-rise .4s ease;}
 .brandsub {color:#a9c3bc; font-size:.73rem; letter-spacing:.11em; text-transform:uppercase; margin-top:.3rem;}
 .hero-note {color:#61716e; font-size:.98rem; margin:0 0 1rem;}
 .section-label {color:#687a76; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; margin:0 0 .4rem;}
+.brief {background:#f8fbfa; border:1px solid #d7e6e2; border-radius:14px; padding:1rem 1.05rem 0.4rem;}
+.brief.hold {background:#fffaf3; border-color:#f0dfc4;}
+.brief-status {font-family:'Manrope',sans-serif; font-weight:800; font-size:1.05rem; margin-bottom:.7rem; color:#163b39;}
+.brief.hold .brief-status {color:#8a5a12;}
+.brief p {font-size:1rem; line-height:1.45; margin:0 0 .7rem; color:#172230;}
+.finding {font-weight:700;}
+.brief-block {margin:.2rem 0 .8rem;}
+.chips {display:flex; flex-wrap:wrap; gap:.4rem;}
+.chip {background:#fff; border:1px solid #d5e2df; border-radius:999px; padding:.2rem .6rem; font-size:.86rem; font-weight:700;}
+.evidence-card {background:#fff; border-left:4px solid #167a69; border-radius:8px; padding:.65rem .8rem; margin:0 0 .55rem;}
+.evidence-kicker {color:#167a69; font-size:.72rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:.25rem;}
+.quiet {color:#61716e; font-size:.9rem;}
+.score-track {height: 8px; background:#e6eeec; border-radius:99px; overflow:hidden; margin:.35rem 0 .2rem;}
+.score-fill {height:100%; width:0; border-radius:99px; background:linear-gradient(90deg,#0e6254,#3dbea3); animation: desk-fill .8s cubic-bezier(.2,.8,.2,1) forwards;}
+@keyframes desk-rise {from {opacity:0; transform:translateY(12px);} to {opacity:1; transform:none;}}
+@keyframes desk-fill {from {width:0;} to {width:var(--score);}}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {animation:none !important; transition:none !important;}
+  .score-fill {width:var(--score);}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -106,6 +207,8 @@ with st.sidebar:
                 if row["score"] is not None and band:
                     label = f"{label} · {band}"
                 st.write(label)
+                if row.get("exception"):
+                    st.caption(row["exception"])
         except (httpx.HTTPError, ValueError):
             st.caption("Priority queue unavailable; review cases individually.")
     selected = st.selectbox("Select a case", [case["case_id"] for case in cases])
@@ -256,44 +359,15 @@ with right:
         st.markdown('<div class="eyebrow">02 / Investigation</div>', unsafe_allow_html=True)
         st.subheader("Analyst review")
         if result is None:
-            st.info("Select an investigation mode and run the case to see a recommendation and its supporting evidence.")
-            st.caption("All cases and procedures are fictional. An analyst makes the final decision.")
+            st.info("Press Investigate case. The next step, the finding, and the evidence will appear here.")
+            st.caption("An analyst makes the final decision. The desk does not move the payment.")
         else:
-            if result["category"] == "insufficient_evidence":
-                st.warning("Insufficient evidence · Analyst review required")
-            else:
-                st.success("Investigation complete · Analyst review required")
-            st.write(result["case_summary"])
-            st.markdown('<div class="section-label">Suggested next step</div>', unsafe_allow_html=True)
-            for step in result["recommended_next_steps"]:
-                st.write(step)
-            st.write("**Missing information:**", ", ".join(result["missing_information"]) or "None identified")
-            for uncertainty in result["uncertainties"]:
-                st.caption(uncertainty)
-            st.divider()
-            evidence_tab, activity_tab, metrics_tab = st.tabs(["Evidence", "Activity", "Run metrics"])
-            with evidence_tab:
-                st.markdown('<div class="section-label">Case evidence</div>', unsafe_allow_html=True)
-                if not result.get("case_evidence"):
-                    st.caption("No case excerpts were returned.")
-                for source in result.get("case_evidence", []):
-                    st.write(f"**{source['source_id']}**")
-                    st.write(source["excerpt"])
-                st.markdown('<div class="section-label">Procedure evidence</div>', unsafe_allow_html=True)
-                if not result["evidence"]:
-                    st.caption("No supporting procedure was returned.")
-                for evidence in result["evidence"]:
-                    st.write(f"**{evidence['document_id']} · {evidence['section']} · v{evidence['version']}**")
-                    st.write(evidence["excerpt"])
-            with activity_tab:
-                st.write("**Tools used**")
-                st.write(" → ".join(result.get("tool_activity", [])) or "No agent tools used")
-                st.write("**Procedure searches**")
-                for attempt in result.get("search_attempts", []):
-                    st.write(f"{attempt['query']} — {attempt['status']}")
-                if not result.get("search_attempts"):
-                    st.caption("No search activity was recorded.")
-            with metrics_tab:
+            st.markdown(_review_brief(result), unsafe_allow_html=True)
+            with st.expander("Run detail"):
+                st.write("**Tools used:**", " → ".join(result.get("tool_activity", [])) or "No agent tools used")
+                searches = result.get("search_attempts") or []
+                if searches:
+                    st.write("**Searches:**", " · ".join(f"{item['query']} ({item['status']})" for item in searches))
                 metrics = result.get("metrics") or {}
                 duration = metrics.get("total_duration_ms")
                 first = metrics.get("first_model_output_ms")
@@ -383,10 +457,15 @@ with st.container(border=True):
             with score_col:
                 st.metric("Review priority", f"{review['score']} / {review['score_max']}")
                 st.caption((review.get("score_band") or "not scored").replace("_", " "))
-                st.progress(min(max(review["score"], 0), review["score_max"]) / review["score_max"])
+                score_width = f"{min(max(review['score'], 0), review['score_max']) / review['score_max'] * 100:.1f}%"
+                st.markdown(
+                    f'<div class="score-track" aria-hidden="true"><div class="score-fill" style="--score:{score_width}"></div></div>',
+                    unsafe_allow_html=True)
             with context_col:
-                st.write("**Signals identified**" if review["signals"] else "**No configured signals identified**")
-                st.caption("The band orders the review queue. It is not a fraud probability, and zero does not mean the payment is safe.")
+                st.write(review.get("review_summary") or "")
+                st.caption("The same checks run for every case. The band orders the queue. It is not a fraud probability, and zero does not mean the payment is safe.")
+                if review.get("history_note"):
+                    st.caption(review["history_note"])
             rubric = review.get("rubric") or []
             if rubric:
                 st.markdown('<div class="section-label">Priority rubric</div>', unsafe_allow_html=True)
@@ -397,7 +476,9 @@ with st.container(border=True):
             for signal in review["signals"]:
                 for source_id in signal["evidence_ids"]:
                     st.caption(f"{source_id}: {review['evidence'][source_id]}")
-        st.write("**Suggested review:**", review["next_step"])
+        st.markdown('<div class="section-label">Verification checklist</div>', unsafe_allow_html=True)
+        for step in review.get("checklist") or [review["next_step"]]:
+            st.write("- " + step)
         if review["evidence"].get("context.analyst_note"):
             st.write("**Context to verify:**", review["evidence"]["context.analyst_note"])
         with st.expander("Fictional review inputs"):

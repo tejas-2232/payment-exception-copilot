@@ -52,6 +52,10 @@ class FraudReview(BaseModel):
     score: int | None = Field(default=None, ge=0, le=100)
     score_max: int = 100
     score_band: str = "not scored"
+    review_summary: str = ""
+    amount_multiple: float | None = None
+    history_note: str = ""
+    checklist: list[str] = Field(default_factory=list)
     signals: list[FraudSignal] = Field(default_factory=list)
     rubric: list[RubricCheck] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
@@ -96,7 +100,7 @@ def score_band(score: int | None) -> str:
     return "priority"
 
 
-def _rubric(fired: dict[str, str], unavailable: str | None = None) -> list[RubricCheck]:
+def _rubric(fired: dict[str, str], silent: dict[str, str] | None = None, unavailable: str | None = None) -> list[RubricCheck]:
     catalog = (
         ("new_beneficiary", "Recently added beneficiary", 25,
          "Beneficiary added within 30 days of the review timestamp."),
@@ -114,10 +118,47 @@ def _rubric(fired: dict[str, str], unavailable: str | None = None) -> list[Rubri
             explanation = fired[signal_id]
             hit = True
         else:
-            explanation = f"Not identified. {plain}"
+            explanation = (silent or {}).get(signal_id, f"Not identified. {plain}")
             hit = False
         checks.append(RubricCheck(signal_id=signal_id, title=title, points=points, fired=hit, explanation=explanation))
     return checks
+
+
+def _history_note(count: int | None) -> str:
+    if count is None:
+        return ""
+    if count < 6:
+        return f"The amount baseline uses {count} supplied payments, so the comparison is thin."
+    return f"The amount baseline uses {count} supplied payments."
+
+
+def _checklist(case: Case, signal_ids: set[str], *, missing: bool, multiple: float | None, history_count: int | None) -> list[str]:
+    steps = []
+    if not case.payment.beneficiary_bank_identifier:
+        steps.append("Confirm the missing bank identifier with a contact already on file before any repair.")
+    if not case.payment.beneficiary_name:
+        steps.append("Confirm the missing beneficiary name with a contact already on file before any repair.")
+    if "conflict" in case.exception_message.lower():
+        steps.append("Show both conflicting values to an analyst and do not pick one.")
+    if "new_beneficiary" in signal_ids or "recent_change" in signal_ids:
+        steps.append("Verify the change with a known contact. Do not use the phone number or email that arrived with the request, and require a second approver.")
+    if "unusual_amount" in signal_ids and multiple is not None:
+        steps.append(f"Ask why this payment is {multiple:.1f} times the supplied average before treating it as routine.")
+    if history_count is not None and history_count < 6:
+        steps.append(f"The amount baseline uses {history_count} payments. Treat the comparison as thin until more history is available.")
+    if missing:
+        steps.append("Obtain the missing review data before using a queue score.")
+    elif not signal_ids:
+        steps.append("No configured signal fired. That does not establish that the payment is safe.")
+    steps.append("Record the analyst decision on the case note. Do not block, release, or repair the payment from this score.")
+    return steps
+
+
+def _summary(case: Case, score: int | None, band: str, signal_ids: set[str], multiple: float | None) -> str:
+    fired = ", ".join(signal_ids) if signal_ids else "no configured signal"
+    amount = f" Amount is {multiple:.1f} times the supplied average." if multiple is not None else ""
+    score_text = "not scored" if score is None else f"{score}/100 {band}"
+    return f"{case.case_id}: {case.exception_message}. Queue priority {score_text}; {fired}.{amount}"
 
 
 def review_fraud(case: Case, context: FraudContext | None) -> FraudReview:
@@ -155,11 +196,15 @@ def review_fraud(case: Case, context: FraudContext | None) -> FraudReview:
         if context.analyst_context:
             evidence["context.analyst_note"] = context.analyst_context
 
+    evidence["case.exception"] = case.exception_message
     if missing:
+        checklist = _checklist(case, set(), missing=True, multiple=None, history_count=None)
         return FraudReview(case_id=case.case_id, status="insufficient_data", score=None, score_band="not scored",
-            rubric=_rubric({}, "Not evaluated. The review data is incomplete, so no priority points are assigned."),
+            review_summary=_summary(case, None, "not scored", set(), None),
+            checklist=checklist,
+            rubric=_rubric({}, unavailable="Not evaluated. The review data is incomplete, so no priority points are assigned."),
             missing_information=missing, evidence=evidence, procedure_excerpt=PROCEDURE,
-            next_step="Ask an analyst to obtain or verify the missing information before prioritizing review.")
+            next_step=checklist[0])
 
     # No score is a probability. Weights are invented solely for this prototype.
     signals = []
@@ -170,25 +215,55 @@ def review_fraud(case: Case, context: FraudContext | None) -> FraudReview:
                                                     if context.instructions_changed_at else "No change recorded in complete history")
     evidence["context.prior_payments"] = ", ".join(f"{p.currency} {p.amount:.2f}" for p in context.prior_payments)
     fired = {}
+    silent = {}
+    beneficiary_days = elapsed.days
     if elapsed <= timedelta(days=30):
-        explanation = "The beneficiary was added within 30 days of the review timestamp."
+        explanation = f"The beneficiary was added {beneficiary_days} days before the review timestamp, inside the 30-day window."
         fired["new_beneficiary"] = explanation
         signals.append(FraudSignal(signal_id="new_beneficiary", title="Recently added beneficiary", points=25,
             evidence_ids=["context.beneficiary_added_at", "context.as_of"], explanation=explanation))
-    if context.instructions_changed_at and context.as_of - context.instructions_changed_at <= timedelta(hours=24):
-        explanation = "Payment instructions changed within 24 hours of the review timestamp."
-        fired["recent_change"] = explanation
-        signals.append(FraudSignal(signal_id="recent_change", title="Recent instruction change", points=35,
-            evidence_ids=["context.instructions_changed_at", "context.as_of"], explanation=explanation))
-    average = sum(p.amount for p in context.prior_payments) / len(context.prior_payments)
-    if case.payment.amount > 3 * average:
-        explanation = f"Amount exceeds three times the average of {len(context.prior_payments)} supplied prior payments."
+    else:
+        silent["new_beneficiary"] = (
+            f"Not identified. The beneficiary was added {beneficiary_days} days before the review timestamp, "
+            "outside the 30-day window.")
+    if context.instructions_changed_at:
+        change_hours = (context.as_of - context.instructions_changed_at).total_seconds() / 3600
+        if change_hours <= 24:
+            explanation = f"Payment instructions changed {change_hours:.1f} hours before the review timestamp, inside the 24-hour window."
+            fired["recent_change"] = explanation
+            signals.append(FraudSignal(signal_id="recent_change", title="Recent instruction change", points=35,
+                evidence_ids=["context.instructions_changed_at", "context.as_of"], explanation=explanation))
+        else:
+            silent["recent_change"] = (
+                f"Not identified. Instructions changed {change_hours:.1f} hours before the review timestamp, "
+                "outside the 24-hour window.")
+    else:
+        silent["recent_change"] = "Not identified. No instruction change is recorded in the complete history."
+    count = len(context.prior_payments)
+    average = sum(p.amount for p in context.prior_payments) / count
+    multiple = case.payment.amount / average
+    threshold = 3 * average
+    evidence["context.amount_average"] = f"{case.payment.currency} {average:.2f}"
+    evidence["context.amount_multiple"] = f"{multiple:.1f}x"
+    if case.payment.amount > threshold:
+        explanation = (
+            f"Amount is {multiple:.1f} times the average of {count} supplied prior payments "
+            f"({case.payment.currency} {average:.2f}). The review line is three times that average "
+            f"({case.payment.currency} {threshold:.2f}).")
         fired["unusual_amount"] = explanation
         signals.append(FraudSignal(signal_id="unusual_amount", title="Amount above fictional history", points=40,
             evidence_ids=["payment.amount", "context.prior_payments"], explanation=explanation))
+    else:
+        silent["unusual_amount"] = (
+            f"Not identified. Amount is {multiple:.1f} times the average of {count} supplied prior payments "
+            f"({case.payment.currency} {average:.2f}), which is not above three times that average "
+            f"({case.payment.currency} {threshold:.2f}).")
     score = sum(s.points for s in signals)
+    band = score_band(score)
+    signal_ids = set(fired)
+    checklist = _checklist(case, signal_ids, missing=False, multiple=round(multiple, 1), history_count=count)
     return FraudReview(case_id=case.case_id, status="signals_identified" if signals else "no_signals_identified",
-        score=score, score_band=score_band(score), signals=signals, rubric=_rubric(fired), evidence=evidence,
-        procedure_excerpt=PROCEDURE,
-        next_step="Ask an analyst to verify the signals and context; no payment action is performed." if signals
-                  else "Review the case normally; no signals identified does not establish that a payment is safe.")
+        score=score, score_band=band, review_summary=_summary(case, score, band, signal_ids, round(multiple, 1)),
+        amount_multiple=round(multiple, 1), history_note=_history_note(count), checklist=checklist,
+        signals=signals, rubric=_rubric(fired, silent), evidence=evidence, procedure_excerpt=PROCEDURE,
+        next_step=checklist[0])
