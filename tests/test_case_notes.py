@@ -145,6 +145,8 @@ def test_agents_have_no_note_write_tool():
     investigator = Path("app/agent/langchain_agent.py").read_text(encoding="utf-8")
     fraud = Path("app/agent/fraud_agent.py").read_text(encoding="utf-8")
     for source in (investigator, fraud):
-        assert "app.notes" not in source
         assert "sqlite" not in source.lower()
         assert "approve_draft" not in source
+        assert "save_draft" not in source
+    assert "app.notes" not in fraud
+    assert "prepare_draft" in investigator and "list_notes" in investigator
